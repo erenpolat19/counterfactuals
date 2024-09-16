@@ -86,16 +86,3 @@ class Explainer(nn.Module):
         z_sample = self.reparameterize(mu, beta * logvar)
 
         recons_a, recons_x = self.decode(z_sample)
-
-'''
-    g, y_g
-    y_cf = !y_g
-    encoder = Encoder(x_dim , h_dim, z_dim)
-
-    factExplainer = Explainer(encoder, z_dim, a_out_size, x_out_size)
-    cfExplainer = Explainer(encoder, z_dim, a_out_size, x_out_size)
-
-    factual_exp = factExplainer(x, edge_index, edge_weight, y_g)
-    cf_exp = cfExplainer(x, edge_index, edge_weight, y_cf)
-
-'''

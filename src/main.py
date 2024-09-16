@@ -1,6 +1,8 @@
 import argparse
 import sys
-
+import numpy as np
+import models
+import torch
 
 sys.path.append('../')
 
@@ -28,46 +30,56 @@ parser.add_argument('--weight_decay', type=float, default=1e-5,
 
 parser.add_argument('--experiment_type', default='train', choices=['train', 'test', 'baseline'],
                     help='train: train CLEAR model; test: load CLEAR from file; baseline: run a baseline')
-
+parser.add_argument
 args = parser.parse_args()
 
+# seed
+np.random.seed(args.seed)
+torch.manual_seed(args.seed)
+def run(args):
+    
+
+
+
+'''1. dataloader for mutag
+        2. pretrain the graph classifier
+        3. initialize factual and counterfactual models
+            (use the same encoder network w 2 decoders)
+        4. for each batch:
+            forward pass, encode graph G to z_mu, z_logvar
+            sample z with reparam. trick
+            decode explanations a_f, a_cf
+            encode a_cf to z_cf_mu, z_cf_logvar
+            sample z_cf
+            decode a_cf_f
+            we have a_f, a_cf, a_cf_f
+
+            loss = d(a_f, a_cf_f), I(y=1, a_cf_f), I(y=0, a_f), I(y=1, a_cf)??,
+                KL(z_u_logvar - prior_z_logvar), KL(a, a_cf), 
+
+            check proxy graph paper potentially for k_1 iterations on one loss etc., and k_2 on the other
+
+            check clear for setting some loss terms to 0 in the beginning e_0 epochs
+
+            backpropagate
+
+                -add something about the validation set? test our metrics on data_val
+                -possibly add perturbation stuff later?
+                -how to make sure of the causal graph relevant w counterfactual
+                -maybe construct a dataset or find a simple observable one (smth like shapes)
+                -look at how to make things global, anchors/prototypes? rkhs (ugh)?, 
+                                            unsup clustering a start? extract global for locals?'''
+    
 
 
 '''
-    1. dataloader for mutag
-    2. pretrain the graph classifier
-    3. initialize factual and counterfactual models
-         (use the same encoder network w 2 decoders)
-    4. for each batch:
-        forward pass, encode graph G to z_mu, z_logvar
-        sample z with reparam. trick
-        decode explanations a_f, a_cf
-        encode a_cf to z_cf_mu, z_cf_logvar
-        sample z_cf
-        decode a_cf_f
-        we have a_f, a_cf, a_cf_f
+    g, y_g
+    y_cf = !y_g
+    encoder = Encoder(x_dim , h_dim, z_dim)
 
-        loss = d(a_f, a_cf_f), I(y=1, a_cf_f), I(y=0, a_f), I(y=1, a_cf)??,
-            KL(z_u_logvar - prior_z_logvar), KL(a, a_cf), 
+    factExplainer = Explainer(encoder, z_dim, a_out_size, x_out_size)
+    cfExplainer = Explainer(encoder, z_dim, a_out_size, x_out_size)
 
-        check proxy graph paper potentially for k_1 iterations on one loss etc., and k_2 on the other
-
-        check clear for setting some loss terms to 0 in the beginning e_0 epochs
-
-        backpropagate
-
-            -add something about the validation set? test our metrics on data_val
-            -possibly add perturbation stuff later?
-            -how to make sure of the causal graph relevant w counterfactual
-            -maybe construct a dataset or find a simple observable one (smth like shapes)
-            -look at how to make things global, anchors/prototypes? rkhs (ugh)?, 
-                                        unsup clustering a start? extract global for locals?
-            
-
-
-
-        
-
-
-
+    factual_exp = factExplainer(x, edge_index, edge_weight, y_g)
+    cf_exp = cfExplainer(x, edge_index, edge_weight, y_cf)
 '''
