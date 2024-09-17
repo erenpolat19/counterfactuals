@@ -3,10 +3,9 @@ from data_preprocessing import *
 
 
 
-def train(model, criterion, optimizer, train_loader, val_loader, best_model, best_val_acc, device):
+def train(model, criterion, optimizer, train_loader, device):
     model.train()
-
-    best_epoch = 0
+    train_loss = 0
     epoch = 0
     for data in train_loader:  # Iterate in batches over the training dataset.  
         #print(data)          
@@ -14,19 +13,12 @@ def train(model, criterion, optimizer, train_loader, val_loader, best_model, bes
         #print(data.edge_index.shape)
         out = model(data.x, data.edge_index, data.batch)  # Perform a single forward pass.
         loss = criterion(out, data.y)  # Compute the loss.
+        train_loss = train_loss + loss
         loss.backward()  # Derive gradients.
         optimizer.step()  # Update parameters based on gradients.
         optimizer.zero_grad()  # Clear gradients.
 
-        #train_acc = test(train_loader, model, device)
-        val_acc = test(val_loader, model, device)
-        #print('train_acc', train_acc, 'val_acc', val_acc)
-        if val_acc > best_val_acc:
-            best_model = model
-            best_val_acc = val_acc
-            best_epoch = epoch
-        epoch = epoch + 1
-    return best_model, best_epoch
+    return train_loss / len(train_loader)
 
 def test(loader, model, device):
      with torch.no_grad():
@@ -51,14 +43,15 @@ if __name__ == '__main__':
     num_node_features = data[0].x.shape[1]
     #print(data[1])
     model = GCN(num_node_features,2).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
     criterion = torch.nn.CrossEntropyLoss()
 
     best_val_acc = 0
     best_model = None
+    best_epoch = 0
     for epoch in range(1, 171):
-        best_model, best_epoch = train(model, criterion, optimizer, train_loader, val_loader, best_model, best_val_acc, device)
-        # train_acc = test(train_loader, model, device)
+        train_loss = train(model, criterion, optimizer, train_loader, device)
+        train_acc = test(train_loader, model, device)
         val_acc = test(val_loader, model, device)
         #test_acc = test(test_loader, model, data, device)
         print(f'Epoch: {epoch:03d}, Train Acc: {train_acc:.4f}, Val Acc: {val_acc:.4f}')

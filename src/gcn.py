@@ -10,7 +10,7 @@ class GCN(torch.nn.Module):
     """
     def __init__(self, num_features, num_classes):
         super(GCN, self).__init__()
-        self.h_dim = 30
+        self.h_dim = 0
         self.conv1 = GCNConv(num_features, self.h_dim)
         self.relu1 = ReLU()
         self.conv2 = GCNConv(self.h_dim, self.h_dim)
@@ -26,10 +26,8 @@ class GCN(torch.nn.Module):
         embed = self.embedding(x, edge_index, edge_weights)
 
         out1 = global_max_pool(embed, batch)
-        out2 = global_mean_pool(embed, batch)
 
-        input_lin = torch.cat([out1, out2], dim=-1)
-        out = self.lin(input_lin)
+        out = self.lin(out1)
         return out
 
     def embedding(self, x, edge_index, edge_weights=None):
@@ -73,7 +71,7 @@ class GCN_3layer(torch.nn.Module):
         x = x.relu()
         x = self.conv3(x, edge_index)
 
-        x = global_mean_pool(x, batch)
+        x = global_max_pool(x, batch)
 
         #x = F.dropout(x, p=0.5, training=self.training)
         x = self.lin(x)
