@@ -7,6 +7,20 @@ from torch_geometric.data import Data
 import scipy.sparse as sp
 from dataloader import get_dataloaders
 
+def adj_to_edge_index(adj):
+    """
+    Convert an adjacency matrix to an edge index
+    :param adj: Original adjacency matrix
+    :return: Edge index representation of the graphs
+    """
+    converted = []
+    for d in adj:
+        edge_index = np.argwhere(d > 0.).T
+        mask = edge_index[0] != edge_index[1]
+        converted.append(edge_index[:, mask])
+
+    return converted
+
 """
 Loads the BA-2motifs dataset from a pickle file.
 
@@ -44,6 +58,7 @@ def preprocess_ba_2motifs(dataset, padded=False, save_flag=True):
     adj_all = []            # List to store adjacency matrices
     features_all = []       # List to store feature matrices
     labels_all = []         # List to store labels
+    edge_indices_all = []
     
     for i in range(len(adjs)):
         adj = adjs[i]
@@ -67,31 +82,33 @@ def preprocess_ba_2motifs(dataset, padded=False, save_flag=True):
                 padded_features[:feature.shape[0], :] = feature
                 feature = padded_features
         
-        # Convert adjacency matrix to edge_index
-        adj_sparse = sp.coo_matrix(adj)  
-        edge_index, _ = from_scipy_sparse_matrix(adj_sparse)
+        # # Convert adjacency matrix to edge_index
+        # adj_sparse = sp.coo_matrix(adj)  
+        # edge_index, _ = from_scipy_sparse_matrix(adj_sparse)
         
-        # Create PyTorch Geometric Data object
-        data = Data(x=torch.tensor(feature, dtype=torch.float), 
-                    edge_index=edge_index,
-                    y=torch.tensor(label, dtype=torch.float))
+        # # Create PyTorch Geometric Data object
+        # data = Data(x=torch.tensor(feature, dtype=torch.float), 
+        #             edge_index=edge_index,
+        #             y=torch.tensor(label, dtype=torch.float))
         
         adj_all.append(adj)
         features_all.append(feature)
         labels_all.append(label)
+    
+    edge_indices_all = adj_to_edge_index(adj_all)
         
     # Save the processed data
     if save_flag:
         path_save = '../dataset/BA-2motif/processed/ba2motifs.pt'
-        torch.save({'data': [Data(x=torch.tensor(features[i], dtype=torch.float), 
-                                  edge_index=from_scipy_sparse_matrix(sp.coo_matrix(adjs[i]))[0],
-                                  y=torch.tensor(labels[i], dtype=torch.float)) 
+        torch.save({'data': [Data(x=torch.tensor(features_all[i], dtype=torch.float), 
+                                  edge_index=torch.tensor(edge_indices_all[i], dtype=torch.long),
+                                  y=torch.tensor(labels_all[i], dtype=torch.float).unsqueeze(0)) 
                               for i in range(len(adjs))]}, path_save)
         print('Saved data:', path_save)
     
-    return [Data(x=torch.tensor(features[i], dtype=torch.float), 
-                 edge_index=from_scipy_sparse_matrix(sp.coo_matrix(adjs[i]))[0],
-                 y=torch.tensor(labels[i], dtype=torch.float)) 
+    return [Data(x=torch.tensor(features_all[i], dtype=torch.float), 
+                 edge_index=torch.tensor(edge_indices_all[i], dtype=torch.long),
+                 y=torch.tensor(labels_all[i], dtype=torch.float).unsqueeze(0)) 
             for i in range(len(adjs))]
 
 if __name__ == '__main__':
