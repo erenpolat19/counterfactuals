@@ -2,6 +2,7 @@
 import os
 import numpy as np
 import pickle
+import torch
 from numpy.random import RandomState
 
 def adj_to_edge_index(adj):
@@ -19,7 +20,7 @@ def adj_to_edge_index(adj):
     return converted
 
 
-def load_graph_dataset(dataset_name, shuffle=True):
+def load_graph_dataset(dataset_name, trn_rate, val_rate, shuffle=True,):
     """Load and optionally shuffle a graph dataset.
     
     Parameters:
@@ -35,36 +36,59 @@ def load_graph_dataset(dataset_name, shuffle=True):
     """
 
     dir_path = os.path.dirname(os.path.realpath(__file__))
+    
+    dataset_path = os.path.join(dir_path, dataset_name, 'processed', 'data.pt') 
+    
+    with open(dataset_path, 'rb') as fin:
+        data = torch.load(dataset_path)
+    print(data)
+
     dataset_path = os.path.join(dir_path, dataset_name, 'raw', f'{dataset_name}.pkl') 
-    #dataset_path = os.path.join(dir_path, dataset_name, 'processed', 'data.pt') 
     with open(dataset_path, 'rb') as fin:
         adjs, features, labels = pickle.load(fin)
-    print(adjs)
+    print(labels)
 
-    n_graphs = adjs.shape[0]
-    indices = np.arange(n_graphs)
-    if shuffle:
-        prng = RandomState(42) 
-        indices = prng.permutation(indices)
+    # print(adjs)
+
+    # n_graphs = adjs.shape[0]
+    # indices = np.arange(n_graphs)
+    # if shuffle:
+    #     prng = RandomState(42) 
+    #     indices = prng.permutation(indices)
 
 
-    adjs = adjs[indices]
-    features = features[indices].astype('float32')
-    labels = labels[indices]
+    # adjs = adjs[indices]
+    # features = features[indices].astype('float32')
+    # labels = labels[indices]
 
-    n_train = int(n_graphs * 0.8)
-    n_val = int(n_graphs * 0.9)
-    train_mask = np.zeros(n_graphs, dtype=bool)
-    val_mask = np.zeros(n_graphs, dtype=bool)
-    test_mask = np.zeros(n_graphs, dtype=bool)
-    train_mask[:n_train] = True
-    val_mask[n_train:n_val] = True
-    test_mask[n_val:] = True
+    # n_train = int(n_graphs * trn_rate)
+    # n_val = int(n_graphs * (trn_rate + val_rate))
+    # train_mask = np.zeros(n_graphs, dtype=bool)
+    # val_mask = np.zeros(n_graphs, dtype=bool)
+    # test_mask = np.zeros(n_graphs, dtype=bool)
+    # train_mask[:n_train] = True
+    # val_mask[n_train:n_val] = True
+    # test_mask[n_val:] = True
 
-    edge_index = adj_to_edge_index(adjs)
+    # edge_index = adj_to_edge_index(adjs)
 
-    print(adjs.shape)
-    print(features.shape)
-    #return edge_index, features, labels, train_mask, val_mask, test_mask
-dataset_name = 'BA-2motif'
-load_graph_dataset(dataset_name)
+    # print(adjs.shape)
+    # print(features.shape)
+    # return edge_index, features, labels, train_mask, val_mask, test_mask
+
+def get_dataloaders(params):
+    dataset_name, trn_rate, val_rate = params
+    data, train_mask, val_mask, test_mask = load_graph_dataset(dataset_name, trn_rate, val_rate)
+
+def select_dataloader(dataset, idx_select, batch_size=500, num_workers=0):
+    dataset_select = GraphData(get_items_from_list(dataset.adj_all,idx_select), get_items_from_list(dataset.feature_all,idx_select),
+                               get_items_from_list(dataset.u_all,idx_select), get_items_from_list(dataset.labels_all,idx_select),
+                               dataset.max_num_nodes, dataset.padded, index=get_items_from_list(dataset.index,idx_select))
+    data_loader_select = torch.utils.data.DataLoader(
+        dataset_select,
+        batch_size=batch_size,
+        num_workers=num_workers)
+    return data_loader_select
+
+
+load_graph_dataset('BA-2motif', None, None)

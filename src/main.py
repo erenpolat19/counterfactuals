@@ -17,11 +17,11 @@ parser.add_argument('--seed', type=int, default=1, metavar='S',
 parser.add_argument('--trn_rate', type=float, default=0.6, help='training data ratio')
 parser.add_argument('--tst_rate', type=float, default=0.2, help='test data ratio')
 
-parser.add_argument('--dim_z', type=int, default=16, metavar='N', help='dimension of z')
-parser.add_argument('--dim_h', type=int, default=16, metavar='N', help='dimension of h')
+parser.add_argument('--z_dim', type=int, default=16, metavar='N', help='dimension of z')
+parser.add_argument('--h_dim', type=int, default=16, metavar='N', help='dimension of h')
 parser.add_argument('--dropout', type=float, default=0.1)
 
-parser.add_argument('--dataset', default='imdb_m', help='dataset to use',
+parser.add_argument('--dataset', default='BA-2motif', help='dataset to use',
                     choices=['community', 'ogbg_molhiv', 'imdb_m'])
 parser.add_argument('--lr', type=float, default=1e-3,
                     help='learning rate for optimizer')
@@ -36,10 +36,15 @@ args = parser.parse_args()
 # seed
 np.random.seed(args.seed)
 torch.manual_seed(args.seed)
+
+
 def run(args):
-    
+    dataset_name = args.dataset_name
 
 
+
+
+run(args)
 
 '''1. dataloader for mutag
         2. pretrain the graph classifier
