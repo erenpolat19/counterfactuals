@@ -58,7 +58,7 @@ if __name__ == '__main__':
     best_model = None
     for epoch in range(1, 171):
         best_model, best_epoch = train(model, criterion, optimizer, train_loader, val_loader, best_model, best_val_acc, device)
-        train_acc = test(train_loader, model, device)
+        # train_acc = test(train_loader, model, device)
         val_acc = test(val_loader, model, device)
         #test_acc = test(test_loader, model, data, device)
         print(f'Epoch: {epoch:03d}, Train Acc: {train_acc:.4f}, Val Acc: {val_acc:.4f}')
