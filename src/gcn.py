@@ -1,5 +1,6 @@
 import torch
 from torch.nn import ReLU, Linear
+import torch.nn.init as init
 from torch_geometric.nn import GCNConv, global_max_pool, global_mean_pool
 
 class GCN(torch.nn.Module):
@@ -10,14 +11,14 @@ class GCN(torch.nn.Module):
     """
     def __init__(self, num_features, num_classes):
         super(GCN, self).__init__()
-        self.h_dim = 0
+        self.h_dim = 20
         self.conv1 = GCNConv(num_features, self.h_dim)
         self.relu1 = ReLU()
         self.conv2 = GCNConv(self.h_dim, self.h_dim)
         self.relu2 = ReLU()
         self.conv3 = GCNConv(self.h_dim, self.h_dim)
         self.relu3 = ReLU()
-        self.lin = Linear(self.h_dim * 2, num_classes)
+        self.lin = Linear(self.h_dim, num_classes)
 
     def forward(self, x, edge_index, batch=None, edge_weights=None):
         if batch is None:
@@ -26,9 +27,20 @@ class GCN(torch.nn.Module):
         embed = self.embedding(x, edge_index, edge_weights)
 
         out1 = global_max_pool(embed, batch)
-
         out = self.lin(out1)
         return out
+    
+    def reset_parameters(self):
+        # Initialize weights using Xavier initialization
+        for layer in self.children():
+            if isinstance(layer, GCNConv):
+                # Xavier initialization for GCNConv weights
+                for param in layer.parameters():
+                    if param.dim() == 1:  # Bias
+                        init.zeros_(param)
+                    elif param.dim() == 2:  # Weight
+                        init.xavier_uniform_(param)
+
 
     def embedding(self, x, edge_index, edge_weights=None):
         if edge_weights is None:
@@ -56,24 +68,3 @@ class GCN(torch.nn.Module):
 
         return input_lin
 
-class GCN_3layer(torch.nn.Module):
-    def __init__(self, in_channels, hidden_channels, out_channels):
-        super(GCN_3layer, self).__init__()
-        self.conv1 = GCNConv(in_channels, hidden_channels)
-        self.conv2 = GCNConv(hidden_channels, hidden_channels)
-        self.conv3 = GCNConv(hidden_channels, hidden_channels)
-        self.lin = torch.nn.Linear(hidden_channels, out_channels)
-
-    def forward(self, x, edge_index, batch):
-        x = self.conv1(x, edge_index)
-        x = x.relu()
-        x = self.conv2(x, edge_index)
-        x = x.relu()
-        x = self.conv3(x, edge_index)
-
-        x = global_max_pool(x, batch)
-
-        #x = F.dropout(x, p=0.5, training=self.training)
-        x = self.lin(x)
-
-        return x

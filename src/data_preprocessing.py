@@ -96,19 +96,19 @@ def preprocess_ba_2motifs(dataset, padded=False, save_flag=True):
         labels_all.append(label)
     
     edge_indices_all = adj_to_edge_index(adj_all)
-        
+    
     # Save the processed data
     if save_flag:
         path_save = '../dataset/BA-2motif/processed/ba2motifs.pt'
         torch.save({'data': [Data(x=torch.tensor(features_all[i], dtype=torch.float), 
                                   edge_index=torch.tensor(edge_indices_all[i], dtype=torch.long),
-                                  y=torch.tensor(labels_all[i], dtype=torch.float).unsqueeze(0)) 
+                                  y=torch.tensor(labels_all[i], dtype=torch.float).argmax())
                               for i in range(len(adjs))]}, path_save)
         print('Saved data:', path_save)
     
     return [Data(x=torch.tensor(features_all[i], dtype=torch.float), 
                  edge_index=torch.tensor(edge_indices_all[i], dtype=torch.long),
-                 y=torch.tensor(labels_all[i], dtype=torch.float).unsqueeze(0)) 
+                 y=torch.tensor(labels_all[i], dtype=torch.float).argmax()) 
             for i in range(len(adjs))]
 
 if __name__ == '__main__':
