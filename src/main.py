@@ -3,6 +3,8 @@ import sys
 import numpy as np
 import models
 import torch
+# from pretrain_clf import * 
+import GCN
 
 sys.path.append('../')
 
@@ -37,9 +39,107 @@ args = parser.parse_args()
 np.random.seed(args.seed)
 torch.manual_seed(args.seed)
 
+def train(decoder, explainer, optimizer_f, optimizer_cf train_loader, device):
+    # edge embeddings go here -- not sure where this code goes, messed up when copy pasting --whoops 
+    # edge embeddings = z, z_shape = (num_nodes, 20)
+
+    """ (LATEER IF WE DO THIS)
+    embedder = ...
+    explainer = Explainer(embedder, z_dim, a_out_size, x_out_size)
+    recons_a, recons_x, z_mu, z_logvar = explainer(x, edge_index, edge_weight, y_target)
+    """
+
+    for epoch in range(args.epochs):
+        decoder.train()
+        explainer.train()
+
+        total_loss_f = 0
+        total_loss_cf = 0
+
+        for batch in train_loader:
+            x, edge_index, edge_weight, y_target = batch.x.to(device), batch.edge_index.to(device), batch.edge_weight.to(device), batch.y.to(device)
+
+            optimizer_f.zero_grad()
+            optimizer_cf.zero_grad()
+
+            # Forward pass through Factual explainer
+            reconst = decoder(z)   
+
+            # Loss for factual explainer
+            loss_f = 
+
+            total_loss_f.backward()
+            optimizer_f.step()
+
+            # Forward pass through the CF explainer
+            recons_a, recons_x, z_mu, z_logvar = explainer(x, edge_index, edge_weight, y_target)
+
+            # Loss for CF explainer
+            loss_cf = 
+
+            total_loss_cf.backward()
+            optimizer_cf.step()
+
+        print(f"Epoch {epoch + 1}/{args.epochs}, Factual Loss: {total_loss_f.item()}, CF Loss: {total_loss_cf.item()}")
+
+        # validate on validation set ?
+
+    print("Training complete!")
+
 
 def run(args):
     dataset_name = args.dataset_name
+    device = "cpu"
+    """
+    load data for train, val, test
+    """
+    data = preprocess_ba_2motifs(dataset_name, padded=False)
+    train_loader, val_loader, test_loader = get_dataloaders(data, batch_size=64, val_split=0.1, test_split=0.1)
+
+    """
+    Factual model: G -> Embedder -> h_node -> h_edge -> MLP(DECODER FOR FACTUAL) -> FACTUAL
+    CF model: G -> Embedder -> h_node -> z_u / z_logvar -> sample -> decoder_x / decoder_a -> CF
+    """
+    # embedder
+    embedder = GCN(num_node_features,2).to(device)              # load best model
+    checkpoint = torch.load('best_model.pth')                   # load the model state dict
+    embedder.load_state_dict(checkpoint['model_state_dict'])
+    embedder.eval()                                             # set the model to evaluation mode
+
+    # MLP (DECODER FOR FACTUAL)
+    z_dim = 20              # ?
+    output_size = 20        # num_features or num_edges ??
+    decoder = Decoder(z_dim=z_dim, output_size=output_size)
+
+    # initialize encoder for VAE
+    x_dim = 20              # input dim = num_feartres
+    h_dim = 20              # hidden dim = ??
+    z_dim = 20              # latent space dim = ??
+    encoder = GraphEncoder(x_dim=x_dim, h_dim=h_dim, z_dim=z_dim, embedder=model).to(device)
+
+    # initialize explainer for VAE (encoder -> mu, logvar -> reparameterize -> z_sample -> decoder -> reconst)
+    explainer = Explainer(encoder, z_dim, a_out_size, x_out_size).to(device)
+    # explainer = Explainer(encoder, z_dim=args.z_dim, a_out_size=num_edges, x_out_size=num_node_features).to(device)
+
+    optimizer = optim.Adam(explainer.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+
+    train(decoder, explainer, criterion, optimizer, train_loader, device)
+    
+
+
+
+
+    
+    
+
+
+     
+
+
+
+
+
+
     
 
 
