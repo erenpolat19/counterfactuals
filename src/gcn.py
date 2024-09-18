@@ -49,22 +49,22 @@ class GCN(torch.nn.Module):
 
         stack = []
         x = x.float()
-        out1 = self.conv1(x, edge_index, edge_weights)
-        
+        out1 = self.conv1(x, edge_index, edge_weights)              # conv1: Input dim = num_features, Output dim = 20
+
         out1 = torch.nn.functional.normalize(out1, p=2, dim=1)
         out1 = self.relu1(out1)
-        stack.append(out1)
+        stack.append(out1)                                         
 
-        out2 = self.conv2(out1, edge_index, edge_weights)
+        out2 = self.conv2(out1, edge_index, edge_weights)           # conv2: Input dim = 20, Output dim = 20
         out2 = torch.nn.functional.normalize(out2, p=2, dim=1)
         out2 = self.relu2(out2)
         stack.append(out2)
 
-        out3 = self.conv3(out2, edge_index, edge_weights)
+        out3 = self.conv3(out2, edge_index, edge_weights)           # conv3: Input dim = 20, Output dim = 20
         out3 = torch.nn.functional.normalize(out3, p=2, dim=1)
         out3 = self.relu3(out3)
 
-        input_lin = out3
+        input_lin = out3                                    `       # lin: Input dim = 20, Output dim = num_classes
 
         return input_lin
 

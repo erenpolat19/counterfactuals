@@ -3,6 +3,8 @@ import sys
 import numpy as np
 import models
 import torch
+# from pretrain_clf import * 
+import GCN
 
 sys.path.append('../')
 
@@ -40,6 +42,52 @@ torch.manual_seed(args.seed)
 
 def run(args):
     dataset_name = args.dataset_name
+    device = "cpu"
+    # pretrain_clf()
+    # load data
+    data = preprocess_ba_2motifs(dataset_name, padded=False)
+    train_loader, val_loader, test_loader = get_dataloaders(data, batch_size=64, val_split=0.1, test_split=0.1)
+
+    """
+    initialize factual model: G -> Embedder -> h_node -> h_edge -> MLP(DECODER FOR FACTUAL) -> FACTUAL
+    """
+    # embedder
+    model = GCN(num_node_features,2).to(device)
+    # load best model
+    checkpoint = torch.load('best_model.pth')
+    # load the model state dict
+    model.load_state_dict(checkpoint['model_state_dict'])
+    # set the model to evaluation mode
+    model.eval()
+
+    # edge embeddings go here
+    # edge embeddings = z, z_shape = (num_nodes, 20)
+
+    # MLP (DECODER FOR FACTUAL)
+    z_dim = 20              # ?
+    output_size = 20        # num_features or num_edges ??
+    decoder = Decoder(z_dim=z_dim, output_size=output_size)
+    reconst = decoder(z)    # factual explanation
+
+    """
+    initialize CF model: G -> Embedder -> h_node -> z_u / z_logvar -> sample -> decoder_x / decoder_a -> CF
+    """
+    # encoder
+    x_dim = 20              # input dim = num_feartres
+    h_dim = 20              # hidden dim = ??
+    z_dim = 20              # latent space dim = ??
+    # initialize encoder for VAE
+    encoder = GraphEncoder(x_dim=x_dim, h_dim=h_dim, z_dim=z_dim, embedder=model)
+    # initialize explainer for VAE (encoder -> mu, logvar -> reparameterize -> z_sample -> decoder -> reconst)
+    explainer = Explainer(encoder, z_dim, a_out_size, x_out_size)
+
+     
+
+
+
+
+
+
     
 
 
