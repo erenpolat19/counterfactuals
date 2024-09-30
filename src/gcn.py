@@ -65,7 +65,7 @@ class GCN(torch.nn.Module):
         out3 = torch.nn.functional.normalize(out3, p=2, dim=1)
         out3 = self.relu3(out3)
 
-        input_lin = out3                                    `       # lin: Input dim = 20, Output dim = num_classes
+        input_lin = out3                                           # lin: Input dim = 20, Output dim = num_classes
 
         return input_lin #num_nodes * h_dim
 

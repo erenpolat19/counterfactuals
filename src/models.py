@@ -6,13 +6,13 @@ from torch_geometric.nn import GCNConv, global_max_pool, global_mean_pool
 from gcn import *
 
 class FactualExplainer(nn.Module):
-    def __init__(self, expl_embedding):
+    def __init__(self, expl_embedding, device):
         super(FactualExplainer, self).__init__()
         self.mlp = nn.Sequential(
             nn.Linear(expl_embedding, 64),
             nn.ReLU(),
             nn.Linear(64, 1)
-        ).to(self.device)
+        ).to(device)
     
     def forward(self, graph_emb): 
         return self.mlp(graph_emb)

@@ -3,8 +3,13 @@ import sys
 import numpy as np
 import models
 import torch
-# from pretrain_clf import * 
-import GCN
+import torch.nn.functional as F
+import data_preprocessing
+from torch.optim import Adam
+from models import *
+#from pretrain_clf import * 
+import gcn
+from data_preprocessing import *
 
 def create_edge_embed(node_embeddings, edge_index):
     h_i = node_embeddings[edge_index[0]]  
@@ -73,17 +78,20 @@ def loss_f(pred, target, mask, reg_coefs):
 def train(clf_model, factual_explainer, optimizer_f, train_loader, device, args):
     for epoch in range(args.epochs):
         factual_explainer.train()
-
+        #t = temp_schedule(e)
+        t = 1.0 #CHANGE LATER
         total_loss_f = 0
 
         for batch in train_loader:
-            x, edge_index, edge_weight, y_target = batch.x.to(device), batch.edge_index.to(device), batch.edge_weight.to(device), batch.y.to(device)
+            x, edge_index, y_target = batch.x.to(device), batch.edge_index.to(device), batch.y.to(device)
             with torch.no_grad():
-                node_emb = clf_model.embedding(batch.x, batch.edge_index, batch.edge_weights) # num_nodes x h_dim
-                edge_emb = create_edge_embed(batch.x, batch.edge_index) # E x 2*h_dim
-
+                node_emb = clf_model.embedding(x, edge_index) # num_nodes x h_dim
+                edge_emb = create_edge_embed(node_emb, edge_index) # E x 2*h_dim
+                
+            print('edge_emb', edge_emb.shape)
+            print('edge_emb', edge_emb.shape)
             sampling_weights = factual_explainer(edge_emb)
-            mask = sample_graph(sampling_weights, t, bias=0.0).squeeze()
+            expl_mask = sample_graph(sampling_weights, t, bias=0.0).squeeze()
 
             with torch.no_grad():
                 # Using the masked graph's edge weights
@@ -94,20 +102,20 @@ def train(clf_model, factual_explainer, optimizer_f, train_loader, device, args)
             # Loss for factual explainer
             # loss_f = KL div + clf loss
             reg_coefs = args.reg_coefs
-            loss_f = loss_f(masked_pred, y_target, mask, reg_coefs)
+            loss_f = loss_f(masked_pred, y_target, expl_mask, reg_coefs)
 
             loss_f.backward()
             optimizer_f.step()
 
             total_loss_f += loss_f.item()
 
-        print(f"Epoch {epoch + 1}/{args.epochs}, Factual Loss: {total_loss_f)}")
+        print(f"Epoch {epoch + 1}/{args.epochs}, Factual Loss: {total_loss_f}")
 
     print("Training complete!")
 
 
 def run(args):
-    dataset_name = args.dataset_name
+    dataset_name = args.dataset
     device = "cpu"
     """
     load data for train, val, test
@@ -119,19 +127,24 @@ def run(args):
     All we are doing now is: Batched graphs --> GCN to get this pretrained classifier's node embeddings
     --> make these into edge embeddings, z_uv (E num edges x 2*h_dim) --> FactualExplainer MLP --> sample & get factual mask (E x 1) 
     """
+    params = {}
     # params
     params['x_dim'] = 10
     params['num_classes'] = 2
     # embedder
     clf_model = GCN(params['x_dim'], params['num_classes']).to(device)              # load best model
-    checkpoint = torch.load('best_model.pth')                                           # load the model state dict
-    clf_model.load_state_dict(checkpoint['model_state_dict'])
-    clf_model.eval()                                                                # set the model to evaluation mode
+    
+    # Load the saved state dictionary
+    checkpoint = torch.load('clf.pth')
+
+    # Load the weights into the model
+    clf_model.load_state_dict(checkpoint)
+    clf_model.eval()                                                              
 
     # Factual Explainer MLP
     expl_embedding = args.h_dim * 2
-    factual_explainer = FactualExplainer(expl_embedding)
-    optimizer_f = optim.Adam(explainer.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+    factual_explainer = FactualExplainer(expl_embedding, device)
+    optimizer_f = Adam(factual_explainer.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 
     train(clf_model, factual_explainer, optimizer_f, train_loader, device, args)
     
