@@ -79,16 +79,15 @@ def train(clf_model, factual_explainer, optimizer_f, train_loader, device, args)
         for batch in train_loader:
             x, edge_index, edge_weight, y_target = batch.x.to(device), batch.edge_index.to(device), batch.edge_weight.to(device), batch.y.to(device)
             with torch.no_grad():
-                node_emb = clf_model.embedding(data.x, data.edge_index, data.edge_weights) # num_nodes x h_dim
-                edge_emb = create_edge_embed(data.x, data.edge_index) # E x 2*h_dim
+                node_emb = clf_model.embedding(batch.x, batch.edge_index, batch.edge_weights) # num_nodes x h_dim
+                edge_emb = create_edge_embed(batch.x, batch.edge_index) # E x 2*h_dim
 
-            expl_mask = factual_explainer(edge_emb)
-            sampling_weights = factual_explainer(input_expl)
+            sampling_weights = factual_explainer(edge_emb)
             mask = sample_graph(sampling_weights, t, bias=0.0).squeeze()
 
             with torch.no_grad():
                 # Using the masked graph's edge weights
-                masked_pred = clf_model((data.x, data.edge_index, expl_mask), data.batch)  # Graph-level prediction
+                masked_pred = clf_model((x, edge_index, expl_mask), batch.batch)  # Graph-level prediction
 
             optimizer_f.zero_grad()
   
