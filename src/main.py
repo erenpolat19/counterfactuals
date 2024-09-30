@@ -108,6 +108,31 @@ def train(decoder, explainer, optimizer_f, optimizer_cf train_loader, device):
 
 def run(args, params):
     dataset_name = args.dataset_name
+    params['x_dim'] = 10
+    params['num_classes'] = 2
+    clf_model = GCN(params['x_dim'], params['num_classes'])
+
+    checkpoint = torch.load('clf.pth')
+    clf_model.load_state_dict(checkpoint)
+
+    #eval mode
+    clf_model.eval()
+    
+    expl_embedding = args.h_dim * 2
+    explainer_model = FactualExplainer(expl_embedding)
+    
+    train_loader = None
+    for data in train_loader:
+        with torch.no_grad():
+            node_emb = clf_model.embedding(data.x, data.edge_index, data.edge_weights) #num_nodes x h_dim
+            edge_emb = create_edge_embed(data.x, data.edge_index) #E x 2*h_dim
+
+            expl_mask = explainer_model(edge_emb)
+            sampling_weights = explainer_model(input_expl)
+            mask = sample_graph(sampling_weights, t, bias=self.sample_bias).squeeze()
+
+            # row, col = data.edge_index
+            # edge_batch = data.batch[row] #E x 1 indicating which edge belongs to which graph, use this mask?
     
 
 
