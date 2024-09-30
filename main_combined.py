@@ -50,6 +50,7 @@ parser.add_argument('--weight_decay', type=float, default=1e-5,
 
 parser.add_argument('--experiment_type', default='train', choices=['train', 'test', 'baseline'],
                     help='train: train CLEAR model; test: load CLEAR from file; baseline: run a baseline')
+parser.add_argument('--reg_coefs', default=(0.05, 1.0), help='reg coefs')
 parser.add_argument
 args = parser.parse_args()
 
@@ -57,22 +58,33 @@ args = parser.parse_args()
 np.random.seed(args.seed)
 torch.manual_seed(args.seed)
 
-def train(clf_model, factual_explainer, optimizer_f, train_loader, device):
+def loss_f(pred, target, mask, reg_coefs):
+    
+    scale = 0.99
+    mask = mask*(2*scale-1.0)+(1.0-scale)
+    
+    cce_loss = F.cross_entropy(pred, target)
+    size_loss = torch.sum(mask) * reg_coefs[0]
+    mask_ent_reg = -mask * torch.log(mask) - (1 - mask) * torch.log(1 - mask)
+    mask_ent_loss = reg_coefs[1] * torch.mean(mask_ent_reg)
+    
+    return cce_loss + size_loss + mask_ent_loss
+
+def train(clf_model, factual_explainer, optimizer_f, train_loader, device, args):
     for epoch in range(args.epochs):
         factual_explainer.train()
 
         total_loss_f = 0
-        total_loss_cf = 0
 
         for batch in train_loader:
             x, edge_index, edge_weight, y_target = batch.x.to(device), batch.edge_index.to(device), batch.edge_weight.to(device), batch.y.to(device)
             with torch.no_grad():
-                node_emb = clf_model.embedding(data.x, data.edge_index, data.edge_weights) #num_nodes x h_dim
-                            edge_emb = create_edge_embed(data.x, data.edge_index) #E x 2*h_dim
+                node_emb = clf_model.embedding(data.x, data.edge_index, data.edge_weights) # num_nodes x h_dim
+                            edge_emb = create_edge_embed(data.x, data.edge_index) # E x 2*h_dim
 
             expl_mask = factual_explainer(edge_emb)
             sampling_weights = factual_explainer(input_expl)
-            mask = sample_graph(sampling_weights, t, bias=self.sample_bias).squeeze()
+            mask = sample_graph(sampling_weights, t, bias=0.0).squeeze()
 
             with torch.no_grad():
                 # Using the masked graph's edge weights
@@ -82,12 +94,15 @@ def train(clf_model, factual_explainer, optimizer_f, train_loader, device):
   
             # Loss for factual explainer
             # loss_f = KL div + clf loss
-            loss_f = 
+            reg_coefs = args.reg_coefs
+            loss_f = loss_f(masked_pred, y_target, mask, reg_coefs)
 
-            total_loss_f.backward()
+            loss_f.backward()
             optimizer_f.step()
 
-        print(f"Epoch {epoch + 1}/{args.epochs}, Factual Loss: {total_loss_f.item()}")
+            total_loss_f += loss_f.item()
+
+        print(f"Epoch {epoch + 1}/{args.epochs}, Factual Loss: {total_loss_f)}")
 
     print("Training complete!")
 
@@ -119,7 +134,7 @@ def run(args):
     factual_explainer = FactualExplainer(expl_embedding)
     optimizer_f = optim.Adam(explainer.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 
-    train(clf_model, factual_explainer, optimizer_f, train_loader, device)
+    train(clf_model, factual_explainer, optimizer_f, train_loader, device, args)
     
 run(args)
 
