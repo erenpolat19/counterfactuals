@@ -127,12 +127,14 @@ def run(args, params):
             node_emb = clf_model.embedding(data.x, data.edge_index, data.edge_weights) #num_nodes x h_dim
             edge_emb = create_edge_embed(data.x, data.edge_index) #E x 2*h_dim
 
-            expl_mask = explainer_model(edge_emb)
-            sampling_weights = explainer_model(input_expl)
-            mask = sample_graph(sampling_weights, t, bias=self.sample_bias).squeeze()
+        sampling_weights = explainer_model(edge_emb)
+        expl_mask = sample_graph(sampling_weights, t, bias=sample_bias).squeeze()
 
-            # row, col = data.edge_index
-            # edge_batch = data.batch[row] #E x 1 indicating which edge belongs to which graph, use this mask?
+        with torch.no_grad():
+            # Using the masked graph's edge weights
+            masked_pred = clf_model((data.x, data.edge_index, expl_mask), data.batch)  # Graph-level prediction
+
+        #loss with KL-div, and cross entropy between masked_pred, y_true for graphs
     
 
 
