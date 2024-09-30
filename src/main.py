@@ -1,8 +1,27 @@
 import argparse
 import sys
 import numpy as np
-import models
+from models import *
 import torch
+
+def create_edge_embed(node_embeddings, edge_index):
+    h_i = node_embeddings[edge_index[0]]  
+    h_j = node_embeddings[edge_index[1]]  
+
+    return torch.cat([h_i, h_j], dim=1)
+
+#gumbel-softmax reparam trick 
+def sample_graph(self, sampling_weights, temperature=1.0, bias=0.0, training=True):
+    if training:
+        bias = bias + 0.0001  #apparently if bias is 0 there can be problems
+        eps = (bias - (1-bias)) * torch.rand(sampling_weights.size(),device=self.device) + (1-bias)
+        gate_inputs = torch.log(eps) - torch.log(1 - eps)
+        gate_inputs = (gate_inputs + sampling_weights) / temperature
+        graph = torch.sigmoid(gate_inputs)
+    else:
+        graph = torch.sigmoid(sampling_weights)
+    return graph
+
 
 sys.path.append('../')
 
@@ -38,10 +57,38 @@ np.random.seed(args.seed)
 torch.manual_seed(args.seed)
 
 
-def run(args):
+def run(args, params):
     dataset_name = args.dataset_name
-    
+    params['x_dim'] = 10
+    params['num_classes'] = 2
+    clf_model = GCN(params['x_dim'], params['num_classes'])
 
+    checkpoint = torch.load('clf.pth')
+    clf_model.load_state_dict(checkpoint)
+
+    #eval mode
+    clf_model.eval()
+    
+    explainer_model = nn.Sequential(
+            nn.Linear(args.h_dim * 2, 64), #expl_embedding = h_dim * 2
+            nn.ReLU(),
+            nn.Linear(64, 1)
+        ).to(self.device)
+    train_loader = None
+    for data in train_loader:
+        with torch.no_grad():
+            node_emb = clf_model.embedding(data.x, data.edge_index, data.edge_weights) #num_nodes x h_dim
+            edge_emb = create_edge_embed(data.x, data.edge_index) #E x 2*h_dim
+
+            expl_mask = explainer_model(edge_emb)
+            sampling_weights = explainer_model(input_expl)
+            mask = sample_graph(sampling_weights, t, bias=self.sample_bias).squeeze()
+
+            # row, col = data.edge_index
+            # edge_batch = data.batch[row] #E x 1 indicating which edge belongs to which graph, use this mask?
+
+
+    
 
 
 

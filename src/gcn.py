@@ -1,4 +1,5 @@
 import torch
+import torch.nn as nn
 from torch.nn import ReLU, Linear
 import torch.nn.init as init
 from torch_geometric.nn import GCNConv, global_max_pool, global_mean_pool
@@ -66,5 +67,7 @@ class GCN(torch.nn.Module):
 
         input_lin = out3
 
-        return input_lin
+        return input_lin #num_nodes * h_dim
+
+
 

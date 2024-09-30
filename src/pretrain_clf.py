@@ -60,4 +60,7 @@ if __name__ == '__main__':
             best_epoch = epoch
         #test_acc = test(test_loader, model, data, device)
         print(f'Epoch: {epoch:03d}, Train Acc: {train_acc:.4f}, Val Acc: {val_acc:.4f}')
-    print('Final test' , test(test_loader, best_model, device), f'best epoch {best_epoch}')
+    print('Final test' , test(test_loader, model, device), f'best epoch {best_epoch}')
+    
+
+    torch.save(model.state_dict(), 'clf.pth')

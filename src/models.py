@@ -1,36 +1,25 @@
 import torch
-from torch import nn
-from torch.optim import Adam
-from torch_geometric.nn import GCNConv,global_max_pool, global_mean_pool
-import torch.nn.functional as F
+import torch.nn as nn
+from torch.nn import ReLU, Linear
+import torch.nn.init as init
+from torch_geometric.nn import GCNConv, global_max_pool, global_mean_pool
+from gcn import *
 
-class GraphModel(nn.Module):
-    def __init__(self, x_dim, h_dim):
-        self.conv1 = GCNConv(x_dim, 1024)
-        self.conv2 = GCNConv(1024, 512)
-        self.conv3 = GCNConv(512, h_dim)
-
-    def forward(self, x, edge_index, edge_weight):
+class FactualExplainer(nn.Module):
+    def __init__(self, expl_embedding):
+        super(FactualExplainer, self).__init__()
+        self.mlp = nn.Sequential(
+            nn.Linear(expl_embedding, 64),
+            nn.ReLU(),
+            nn.Linear(64, 1)
+        ).to(self.device)
     
-        out1 = self.conv1(x, edge_index, edge_weight=edge_weight)
-        out1 = torch.nn.functional.normalize(out1, p=2, dim=1)
-        out1 = F.relu(out1)
-
-        out2 = self.conv2(out1, edge_index, edge_weight=edge_weight)
-        out2 = torch.nn.functional.normalize(out2, p=2, dim=1)
-        out2 = F.relu(out2)
-
-        out3 = self.conv3(out2, edge_index, edge_weight=edge_weight)
-        out3 = torch.nn.functional.normalize(out3, p=2, dim=1)
-        out3 = F.relu(out3)
-
-        return out3  
+    def forward(self, graph_emb): 
+        return self.mlp(graph_emb)
 
 class GraphEncoder(nn.Module):
-    def __init__(self, x_dim, h_dim, z_dim, embedder=None):
+    def __init__(self, embedder, x_dim, h_dim, z_dim):
         super(GraphEncoder, self).__init__()
-        if embedder == None:
-            embedder = GraphModel(x_dim, h_dim)
         self.embedder = embedder
         self.h_dim = h_dim
         self.z_dim = z_dim
@@ -47,7 +36,7 @@ class GraphEncoder(nn.Module):
         return out
     
     def forward(self, x, edge_index, edge_weight, y_target): 
-        graph_emb = self.graph_pooling(self.embedder(x, edge_index, edge_weight))
+        graph_emb = self.graph_pooling(self.embedder.embedding(x, edge_index))
         
         z_mu = self.encoder_mean(torch.cat((graph_emb, y_target), dim=1))
         z_logvar = self.encoder_var(torch.cat((graph_emb, y_target), dim=1))
@@ -64,7 +53,7 @@ class Decoder(nn.Module):
         )
     def forward(self, z):
         return torch.sigmoid(self.decoder(z))
-
+    
 class Explainer(nn.Module):
     def __init__(self, encoder, z_dim, a_out_size, x_out_size):
         self.encoder = encoder
