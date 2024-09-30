@@ -4,6 +4,9 @@ import numpy as np
 from models import *
 import torch
 
+# from pretrain_clf import * 
+import gcn
+
 def create_edge_embed(node_embeddings, edge_index):
     h_i = node_embeddings[edge_index[0]]  
     h_j = node_embeddings[edge_index[1]]  
@@ -21,7 +24,6 @@ def sample_graph(self, sampling_weights, temperature=1.0, bias=0.0, training=Tru
     else:
         graph = torch.sigmoid(sampling_weights)
     return graph
-
 
 sys.path.append('../')
 
@@ -56,39 +58,58 @@ args = parser.parse_args()
 np.random.seed(args.seed)
 torch.manual_seed(args.seed)
 
+def train(decoder, explainer, optimizer_f, optimizer_cf train_loader, device):
+    # edge embeddings go here -- not sure where this code goes, messed up when copy pasting --whoops 
+    # edge embeddings = z, z_shape = (num_nodes, 20)
+
+    """ (LATEER IF WE DO THIS)
+    embedder = ...
+    explainer = Explainer(embedder, z_dim, a_out_size, x_out_size)
+    recons_a, recons_x, z_mu, z_logvar = explainer(x, edge_index, edge_weight, y_target)
+    """
+
+    for epoch in range(args.epochs):
+        decoder.train()
+        explainer.train()
+
+        total_loss_f = 0
+        total_loss_cf = 0
+
+        for batch in train_loader:
+            x, edge_index, edge_weight, y_target = batch.x.to(device), batch.edge_index.to(device), batch.edge_weight.to(device), batch.y.to(device)
+
+            optimizer_f.zero_grad()
+            optimizer_cf.zero_grad()
+
+            # Forward pass through Factual explainer
+            reconst = decoder(z)   
+
+            # Loss for factual explainer
+            loss_f = 
+
+            total_loss_f.backward()
+            optimizer_f.step()
+
+            # Forward pass through the CF explainer
+            recons_a, recons_x, z_mu, z_logvar = explainer(x, edge_index, edge_weight, y_target)
+
+            # Loss for CF explainer
+            loss_cf = 
+
+            total_loss_cf.backward()
+            optimizer_cf.step()
+
+        print(f"Epoch {epoch + 1}/{args.epochs}, Factual Loss: {total_loss_f.item()}, CF Loss: {total_loss_cf.item()}")
+
+        # validate on validation set ?
+
+    print("Training complete!")
+
 
 def run(args, params):
     dataset_name = args.dataset_name
-    params['x_dim'] = 10
-    params['num_classes'] = 2
-    clf_model = GCN(params['x_dim'], params['num_classes'])
-
-    checkpoint = torch.load('clf.pth')
-    clf_model.load_state_dict(checkpoint)
-
-    #eval mode
-    clf_model.eval()
     
-    explainer_model = nn.Sequential(
-            nn.Linear(args.h_dim * 2, 64), #expl_embedding = h_dim * 2
-            nn.ReLU(),
-            nn.Linear(64, 1)
-        ).to(self.device)
-    train_loader = None
-    for data in train_loader:
-        with torch.no_grad():
-            node_emb = clf_model.embedding(data.x, data.edge_index, data.edge_weights) #num_nodes x h_dim
-            edge_emb = create_edge_embed(data.x, data.edge_index) #E x 2*h_dim
 
-            expl_mask = explainer_model(edge_emb)
-            sampling_weights = explainer_model(input_expl)
-            mask = sample_graph(sampling_weights, t, bias=self.sample_bias).squeeze()
-
-            # row, col = data.edge_index
-            # edge_batch = data.batch[row] #E x 1 indicating which edge belongs to which graph, use this mask?
-
-
-    
 
 
 
