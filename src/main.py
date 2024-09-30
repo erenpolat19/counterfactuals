@@ -3,6 +3,7 @@ import sys
 import numpy as np
 from models import *
 import torch
+import torch.nn.functional as F
 
 # from pretrain_clf import * 
 import gcn
