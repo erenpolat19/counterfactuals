@@ -15,13 +15,13 @@ def create_edge_embed(node_embeddings, edge_index):
     h_i = node_embeddings[edge_index[0]]  
     h_j = node_embeddings[edge_index[1]]  
 
-    return torch.cat([h_i, h_j], dim=1)
+    return torch.cat([h_i, h_j], dim=-1)
 
 # gumbel-softmax reparam trick 
-def sample_graph(self, sampling_weights, temperature=1.0, bias=0.0, training=True):
+def sample_graph(sampling_weights, temperature=1.0, bias=0.0, device='cpu', training=True):
     if training:
         bias = bias + 0.0001  #apparently if bias is 0 there can be problems
-        eps = (bias - (1-bias)) * torch.rand(sampling_weights.size(),device=self.device) + (1-bias)
+        eps = (bias - (1-bias)) * torch.rand(sampling_weights.size(),device=device) + (1-bias)
         gate_inputs = torch.log(eps) - torch.log(1 - eps)
         gate_inputs = (gate_inputs + sampling_weights) / temperature
         graph = torch.sigmoid(gate_inputs)
@@ -42,8 +42,8 @@ parser.add_argument('--seed', type=int, default=1, metavar='S',
 parser.add_argument('--trn_rate', type=float, default=0.6, help='training data ratio')
 parser.add_argument('--tst_rate', type=float, default=0.2, help='test data ratio')
 
-parser.add_argument('--z_dim', type=int, default=16, metavar='N', help='dimension of z')
-parser.add_argument('--h_dim', type=int, default=16, metavar='N', help='dimension of h')
+parser.add_argument('--z_dim', type=int, default=20, metavar='N', help='dimension of z') #I AM CHANGING FROM 16 TO 20 FOR DEBUG
+parser.add_argument('--h_dim', type=int, default=20, metavar='N', help='dimension of h') #I AM CHANGING FROM 16 TO 20 FOR DEBUG
 parser.add_argument('--dropout', type=float, default=0.1)
 
 parser.add_argument('--dataset', default='BA-2motif', help='dataset to use',
@@ -75,6 +75,21 @@ def loss_f(pred, target, mask, reg_coefs):
     
     return cce_loss + size_loss + mask_ent_loss
 
+
+def eval_acc(clf_model, expl_model, dataloader, device, args):
+    expl_model.eval()
+    correct = 0
+    for data in dataloader:  # Iterate in batches over the training/test dataset.
+        x, edge_index, y_target = data.x.to(device), data.edge_index.to(device), data.y.to(device)
+        with torch.no_grad():
+            node_emb = clf_model.embedding(x, edge_index) # num_nodes x h_dim
+            edge_emb = create_edge_embed(node_emb, edge_index) # E x 2*h_dim
+            sampling_weights = expl_model(edge_emb)
+            expl_mask = sample_graph(sampling_weights, bias=0.0, training=False).squeeze()
+            # Using the masked graph's edge weights
+            masked_pred = clf_model(x, edge_index, expl_mask, data.batch)  # Graph-level prediction
+
+
 def train(clf_model, factual_explainer, optimizer_f, train_loader, device, args):
     for epoch in range(args.epochs):
         factual_explainer.train()
@@ -86,32 +101,28 @@ def train(clf_model, factual_explainer, optimizer_f, train_loader, device, args)
             x, edge_index, y_target = batch.x.to(device), batch.edge_index.to(device), batch.y.to(device)
             with torch.no_grad():
                 node_emb = clf_model.embedding(x, edge_index) # num_nodes x h_dim
-                edge_emb = create_edge_embed(node_emb, edge_index) # E x 2*h_dim
-                
-            print('edge_emb', edge_emb.shape)
-            print('edge_emb', edge_emb.shape)
+            
+            edge_emb = create_edge_embed(node_emb, edge_index) # E x 2*h_dim
+
             sampling_weights = factual_explainer(edge_emb)
             expl_mask = sample_graph(sampling_weights, t, bias=0.0).squeeze()
 
-            with torch.no_grad():
-                # Using the masked graph's edge weights
-                masked_pred = clf_model((x, edge_index, expl_mask), batch.batch)  # Graph-level prediction
+            masked_pred = clf_model(x, edge_index, expl_mask, batch.batch)  # Graph-level prediction
 
             optimizer_f.zero_grad()
   
             # Loss for factual explainer
             # loss_f = KL div + clf loss
             reg_coefs = args.reg_coefs
-            loss_f = loss_f(masked_pred, y_target, expl_mask, reg_coefs)
+            loss = loss_f(masked_pred, y_target, expl_mask, reg_coefs)
 
-            loss_f.backward()
+            loss.backward()
             optimizer_f.step()
 
-            total_loss_f += loss_f.item()
+            total_loss_f += loss.item()
 
-        print(f"Epoch {epoch + 1}/{args.epochs}, Factual Loss: {total_loss_f}")
+        print(f"Epoch {epoch + 1}/{args.epochs}, Factual Loss: {loss}")
 
-    print("Training complete!")
 
 
 def run(args):

@@ -21,7 +21,7 @@ class GCN(torch.nn.Module):
         self.relu3 = ReLU()
         self.lin = Linear(self.h_dim, num_classes)
 
-    def forward(self, x, edge_index, batch=None, edge_weights=None):
+    def forward(self, x, edge_index, edge_weights=None, batch=None):
         if batch is None:
             batch = torch.zeros(x.size(0), dtype=torch.long)
             
