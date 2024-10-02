@@ -48,7 +48,7 @@ parser.add_argument('--dropout', type=float, default=0.1)
 
 parser.add_argument('--dataset', default='BA-2motif', help='dataset to use',
                     choices=['community', 'ogbg_molhiv', 'imdb_m'])
-parser.add_argument('--lr', type=float, default=1e-3,
+parser.add_argument('--lr', type=float, default=1e-3, #changed to 3e-3
                     help='learning rate for optimizer')
 parser.add_argument('--weight_decay', type=float, default=1e-5,
                     help='weight decay')
@@ -90,24 +90,10 @@ def eval_acc(clf_model, expl_model, dataloader, device, args):
             masked_pred = clf_model(x, edge_index, edge_weights = expl_mask, batch=data.batch)   # Graph-level prediction
             y_pred = masked_pred.argmax(dim=1)
             correct += int((y_pred == y_target).sum())
+    print('mask:', expl_mask.sum(), 'graph:', edge_index[0].shape)
     
     return correct / len(dataloader.dataset)
-
-def test(loader, model, device):
-        model.eval()
-
-        correct = 0
-        for data in loader:  # Iterate in batches over the training/test dataset.
-            
-            data.to(device)
-            with torch.no_grad():
-                out = model(data.x, data.edge_index, edge_weights = None, batch = data.batch)
-                pred = out.argmax(dim=1)  # Use the class with highest probability.
-                y = data.y
-                correct += int((pred == y).sum())  # Check against ground-truth labels.
-        return correct / len(loader.dataset)  # Derive ratio of correct predictions.
     
-
 
 def train(clf_model, factual_explainer, optimizer_f, train_loader, val_loader, test_loader, device, args, temp=(5.0, 2.0)):
     temp_schedule = lambda e: temp[0] * ((temp[1] / temp[0]) ** (e / args.epochs))
@@ -126,6 +112,8 @@ def train(clf_model, factual_explainer, optimizer_f, train_loader, val_loader, t
             sampling_weights = factual_explainer(edge_emb)
             
             expl_mask = sample_graph(sampling_weights, t, bias=0.0).squeeze()
+
+            #print(expl_mask.sum(), edge_index[0].shape)
             masked_pred = clf_model(x, edge_index, expl_mask, batch.batch)  # Graph-level prediction
 
             optimizer_f.zero_grad()
@@ -133,6 +121,7 @@ def train(clf_model, factual_explainer, optimizer_f, train_loader, val_loader, t
             # Loss for factual explainer
             # loss_f = KL div + clf loss
             reg_coefs = args.reg_coefs
+            reg_coefs = (1e-3, reg_coefs[1])
             loss = loss_f(masked_pred, y_target, expl_mask, reg_coefs)
 
             loss.backward()
@@ -141,9 +130,11 @@ def train(clf_model, factual_explainer, optimizer_f, train_loader, val_loader, t
             total_loss_f += loss.item()
 
         val_acc = eval_acc(clf_model, factual_explainer, val_loader, device, args)
-        print(f"Epoch {epoch + 1}/{args.epochs}, Factual Loss: {loss}, Val_acc: {val_acc}")
+        train_acc = eval_acc(clf_model, factual_explainer, val_loader, device, args)
+        print(f"Epoch {epoch + 1}/{args.epochs}, Factual Loss: {loss}, Val_acc: {val_acc},  Train_acc: {train_acc}")
 
-
+    test_acc = eval_acc(clf_model, factual_explainer, test_loader, device, args)
+    print(f"Final Test_acc: {test_acc}")
 
 def run(args):
     dataset_name = args.dataset
@@ -175,7 +166,7 @@ def run(args):
     # Factual Explainer MLP
     expl_embedding = args.h_dim * 2
     factual_explainer = FactualExplainer(expl_embedding, device)
-    optimizer_f = Adam(factual_explainer.parameters(), lr=args.lr)
+    optimizer_f = Adam(factual_explainer.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 
 
     train(clf_model, factual_explainer, optimizer_f, train_loader, val_loader, test_loader, device, args)
