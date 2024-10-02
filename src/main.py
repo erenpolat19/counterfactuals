@@ -87,14 +87,19 @@ def eval_acc(clf_model, expl_model, dataloader, device, args):
             sampling_weights = expl_model(edge_emb)
             expl_mask = sample_graph(sampling_weights, bias=0.0, training=False).squeeze()
             # Using the masked graph's edge weights
-            masked_pred = clf_model(x, edge_index, expl_mask, data.batch)  # Graph-level prediction
+            masked_pred = clf_model(x, edge_index, edge_weights = expl_mask, batch=data.batch)   # Graph-level prediction
+            y_pred = np.argmax(masked_pred, axis=1)
+            correct = (correct + ( y_target == y_pred).sum())
+    
+    return correct / len(dataloader)
+    
 
 
-def train(clf_model, factual_explainer, optimizer_f, train_loader, device, args):
+def train(clf_model, factual_explainer, optimizer_f, train_loader, val_loader, test_loader, device, args, temp=(5.0, 2.0)):
+    temp_schedule = lambda e: temp[0] * ((temp[1] / temp[0]) ** (e / args.epochs))
     for epoch in range(args.epochs):
         factual_explainer.train()
-        #t = temp_schedule(e)
-        t = 1.0 #CHANGE LATER
+        t = temp_schedule(epoch)
         total_loss_f = 0
 
         for batch in train_loader:
@@ -105,8 +110,8 @@ def train(clf_model, factual_explainer, optimizer_f, train_loader, device, args)
             edge_emb = create_edge_embed(node_emb, edge_index) # E x 2*h_dim
 
             sampling_weights = factual_explainer(edge_emb)
+            
             expl_mask = sample_graph(sampling_weights, t, bias=0.0).squeeze()
-
             masked_pred = clf_model(x, edge_index, expl_mask, batch.batch)  # Graph-level prediction
 
             optimizer_f.zero_grad()
@@ -121,7 +126,8 @@ def train(clf_model, factual_explainer, optimizer_f, train_loader, device, args)
 
             total_loss_f += loss.item()
 
-        print(f"Epoch {epoch + 1}/{args.epochs}, Factual Loss: {loss}")
+        val_acc = eval_acc(clf_model, factual_explainer, val_loader, device, args)
+        print(f"Epoch {epoch + 1}/{args.epochs}, Factual Loss: {loss}, Val_acc: {val_acc}")
 
 
 
@@ -155,9 +161,10 @@ def run(args):
     # Factual Explainer MLP
     expl_embedding = args.h_dim * 2
     factual_explainer = FactualExplainer(expl_embedding, device)
-    optimizer_f = Adam(factual_explainer.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+    optimizer_f = Adam(factual_explainer.parameters(), lr=args.lr)
 
-    train(clf_model, factual_explainer, optimizer_f, train_loader, device, args)
+
+    train(clf_model, factual_explainer, optimizer_f, train_loader, val_loader, test_loader, device, args)
     
 run(args)
 

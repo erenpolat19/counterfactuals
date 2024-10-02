@@ -1,6 +1,6 @@
 from gcn import *
 from data_preprocessing import *
-
+import argparse
 
 
 def train(model, criterion, optimizer, train_loader, device):
@@ -10,7 +10,7 @@ def train(model, criterion, optimizer, train_loader, device):
         #print(data)          
         data.to(device)
         #print(data.edge_index.shape)
-        out = model(data.x, data.edge_index, data.batch)  # Perform a single forward pass.
+        out = model(data.x, data.edge_index, edge_weights = None, batch = data.batch)  # Perform a single forward pass.
         loss = criterion(out, data.y)  # Compute the loss.
         train_loss = train_loss + loss
         loss.backward()  # Derive gradients.
@@ -27,7 +27,7 @@ def test(loader, model, device):
             
             data.to(device)
             with torch.no_grad():
-                out = model(data.x, data.edge_index, data.batch)  
+                out = model(data.x, data.edge_index, edge_weights = None, batch = data.batch)
                 pred = out.argmax(dim=1)  # Use the class with highest probability.
                 y = data.y
                 correct += int((pred == y).sum())  # Check against ground-truth labels.
@@ -40,6 +40,9 @@ if __name__ == '__main__':
     data = preprocess_ba_2motifs(dataset_name, padded=False)
     train_loader, val_loader, test_loader = get_dataloaders(data, batch_size=64, val_split=0.1, test_split=0.1)
 
+    parser = argparse.ArgumentParser(description='')
+    parser.add_argument('--batch_size', type=int, default=500, metavar='N',
+                        help='input batch size for training (default: 500)')
     num_node_features = data[0].x.shape[1]
     #print(data[1])
     model = GCN(num_node_features,2).to(device)
@@ -63,4 +66,4 @@ if __name__ == '__main__':
     print('Final test' , test(test_loader, model, device), f'best epoch {best_epoch}')
     
 
-    torch.save(model.state_dict(), 'clf.pth')
+    torch.save(model.state_dict(), 'clf2.pth')
