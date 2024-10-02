@@ -88,10 +88,24 @@ def eval_acc(clf_model, expl_model, dataloader, device, args):
             expl_mask = sample_graph(sampling_weights, bias=0.0, training=False).squeeze()
             # Using the masked graph's edge weights
             masked_pred = clf_model(x, edge_index, edge_weights = expl_mask, batch=data.batch)   # Graph-level prediction
-            y_pred = np.argmax(masked_pred, axis=1)
-            correct = (correct + ( y_target == y_pred).sum())
+            y_pred = masked_pred.argmax(dim=1)
+            correct += int((y_pred == y_target).sum())
     
-    return correct / len(dataloader)
+    return correct / len(dataloader.dataset)
+
+def test(loader, model, device):
+        model.eval()
+
+        correct = 0
+        for data in loader:  # Iterate in batches over the training/test dataset.
+            
+            data.to(device)
+            with torch.no_grad():
+                out = model(data.x, data.edge_index, edge_weights = None, batch = data.batch)
+                pred = out.argmax(dim=1)  # Use the class with highest probability.
+                y = data.y
+                correct += int((pred == y).sum())  # Check against ground-truth labels.
+        return correct / len(loader.dataset)  # Derive ratio of correct predictions.
     
 
 
