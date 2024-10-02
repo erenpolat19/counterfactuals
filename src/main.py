@@ -93,7 +93,30 @@ def eval_acc(clf_model, expl_model, dataloader, device, args):
     print('mask:', expl_mask.sum(), 'graph:', edge_index[0].shape)
     
     return correct / len(dataloader.dataset)
+
+def explain(clf_model, expl_model, inputs, device='cpu', bias = 0.0):
+    with torch.no_grad():
+        x, edge_index, y_target = inputs
+        node_emb = clf_model.embedding(x, edge_index) # num_nodes x h_dim
+        edge_emb = create_edge_embed(node_emb, edge_index) # E x 2*h_dim
+        sampling_weights = expl_model(edge_emb)
+        expl_mask = sample_graph(sampling_weights, bias=bias, training=False).squeeze()
     
+    return expl_mask
+
+def eval_explain(clf_model, expl_model, ground_t_explanation, dataloader, device):
+    expl_model.eval()
+    for data in dataloader:  # Iterate in batches over the training/test dataset.
+        inputs = data.x.to(device), data.edge_index.to(device), data.y.to(device)
+        x, edge_index, y_target = inputs
+        expl_mask = explain(clf_model, expl_model, inputs)
+        
+        masked_pred = clf_model(x, edge_index, expl_mask, data.batch)
+        y_pred = masked_pred.argmax(dim=1)
+        correct += int((y_pred == y_target).sum())
+    print('mask:', expl_mask.sum(), 'graph:', edge_index[0].shape)
+    
+    return correct / len(dataloader.dataset)
 
 def train(clf_model, factual_explainer, optimizer_f, train_loader, val_loader, test_loader, device, args, temp=(5.0, 2.0)):
     temp_schedule = lambda e: temp[0] * ((temp[1] / temp[0]) ** (e / args.epochs))
@@ -102,8 +125,8 @@ def train(clf_model, factual_explainer, optimizer_f, train_loader, val_loader, t
         t = temp_schedule(epoch)
         total_loss_f = 0
 
-        for batch in train_loader:
-            x, edge_index, y_target = batch.x.to(device), batch.edge_index.to(device), batch.y.to(device)
+        for data in train_loader:
+            x, edge_index, y_target = data.x.to(device), data.edge_index.to(device), data.y.to(device)
             with torch.no_grad():
                 node_emb = clf_model.embedding(x, edge_index) # num_nodes x h_dim
             
@@ -114,7 +137,7 @@ def train(clf_model, factual_explainer, optimizer_f, train_loader, val_loader, t
             expl_mask = sample_graph(sampling_weights, t, bias=0.0).squeeze()
 
             #print(expl_mask.sum(), edge_index[0].shape)
-            masked_pred = clf_model(x, edge_index, expl_mask, batch.batch)  # Graph-level prediction
+            masked_pred = clf_model(x, edge_index, expl_mask, data.batch)  # Graph-level prediction
 
             optimizer_f.zero_grad()
   
