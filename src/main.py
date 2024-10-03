@@ -10,8 +10,130 @@ from models import *
 #from pretrain_clf import * 
 import gcn
 from data_preprocessing import *
+
+import networkx as nx
+import matplotlib.pyplot as plt
+
+import networkx as nx
+import matplotlib.pyplot as plt
+
+def visualize(batch, expl_mask):
+    # Extract node features and edge index from the batch
+    x = batch.x
+    edge_index = batch.edge_index
+
+    print(f"Initial edge_index shape: {edge_index.shape}")  # Shape [2, N_edges]
+    print(f"Initial expl_mask shape: {expl_mask.shape}")    # Shape [N_edges]
+
+    G = nx.Graph()
+
+    # Apply the batch mask to select nodes from the first graph (batch == 1)
+    mask = batch.batch == 1  # Assuming batch.batch tells which graph each node belongs to
+    node_indices = mask.nonzero(as_tuple=False).view(-1)
+    node_features = x[node_indices]
+    
+    # Apply the node mask to filter the edges in edge_index
+    edge_mask = mask[edge_index[0]]  # Select edges where the source node is part of the mask
+    edge_index_filtered = edge_index[:, edge_mask]  # Filter the edge index
+
+    # Also filter the explanation mask to keep only relevant edges
+    expl_mask_filtered = expl_mask[edge_mask]  # Filter the explanation mask
+    
+    print(f"Filtered edge_index shape: {edge_index_filtered.shape}")  # Should be [2, M_edges]
+    print(f"Filtered expl_mask shape: {expl_mask_filtered.shape}")    # Should be [M_edges]
+    
+    # Select top K edges based on the filtered explanation mask
+    k = 10
+    top_k_values, top_k_indices = torch.topk(expl_mask_filtered, k)
+    
+    for i in range(k):
+        u = edge_index_filtered[0][top_k_indices[i]]
+        v = edge_index_filtered[1][top_k_indices[i]]
+        G.add_edge(u.item(), v.item())
+
+    # Identify and visualize the nodes
+    print("Red node:", node_indices.tolist()[0])
+    node_to_identify = None  # Example: node to highlight
+    
+    for i, node_idx in enumerate(node_indices):
+        feature_tuple = tuple(node_features[i].tolist())
+        G.add_node(node_idx.item(), feature=feature_tuple)
+
+    node_colors = ['red' if node == node_to_identify else 'blue' for node in G.nodes()]
+    nx.draw(G, with_labels=False, node_size=20, node_color=node_colors)
+    plt.show()
+
+
+# make batch size 1 then just do it once on all the test graphs
+def visualize_old(batch, expl_mask):
+    # print(batch)
+    x = batch.x
+    edge_index = batch.edge_index
+
+    # print(edge_index.shape)
+    G = nx.Graph()
+    # get the first batch
+    mask = batch.batch == 1
+
+    edge_mask = mask[edge_index[0]]  # This gives the mask for the edges, resulting in 50 edges being selected
+
+    # Step 2: Apply the mask to both edge_index and expl_mask
+    edge_index_filtered = edge_index[:, edge_mask]  # Shape will be [2, 50]
+    expl_mask_filtered = expl_mask[edge_mask]  # This will give the mask corresponding to the selected 50 edges
+
+    # Step 3: Now you can visualize with the filtered edge index and explanation mask
+    print("Filtered edge index shape:", edge_index_filtered.shape)  # Should be [2, 50]
+    print("Filtered expl_mask shape:", expl_mask_filtered.shape)
+
+
+
+    # node_indices = mask.nonzero(as_tuple=False).view(-1)
+    # node_features = x[node_indices]
+    # edge_index = edge_index_full[:, mask[edge_index_full[0]]]
+
+    # print("Edge index shape:", edge_index.shape)  # Should be [2, 3200] or similar
+    # print("Mask shape (applied to edge_index[0]):", mask[edge_index[0]].shape)  # Should match number of edges
+    # print("Expl mask shape:", expl_mask.shape)  # Should be [3200]
+
+
+    # edge_mask = mask[edge_index[0]]  
+    # edge_mask = expl_mask[edge_mask] 
+
+    # print(node_indices.shape)
+    # # print(edge_index)
+    # print(edge_index.shape)
+    # print(expl_mask.shape)
+    # print(mask.shape)
+
+
+    #  expl_mask = expl_mask[mask[edge_index_full[0]]]
+
+    k = 50
+    top_k_values, top_k_indices = torch.topk(expl_mask, k)
+    print(top_k_indices)
+    for i in range(k):
+        u = edge_index[0][top_k_indices[i]]
+        v = edge_index[1][top_k_indices[i]]
+        G.add_edge(u, v)
+
+    print("Red node:", node_indices.tolist()[0])
+
+    node_to_identify = None #node_indices.tolist()[0]
+
+
+    for i, node_idx in enumerate(node_indices):
+        feature_tuple = tuple(node_features[i].tolist())  
+        G.add_node(node_idx.item(), feature=feature_tuple)
+
+
+    node_colors = ['red' if node == node_to_identify else 'blue' for node in G.nodes()]
+    nx.draw(G, with_labels=False, node_size=20, node_color=node_colors)
+    plt.show()
+        
+
 from sklearn.metrics import roc_auc_score
 import os 
+
 
 def create_edge_embed(node_embeddings, edge_index):
     h_i = node_embeddings[edge_index[0]]  
@@ -81,13 +203,18 @@ def loss_f(pred, target, mask, reg_coefs):
 def eval_acc(clf_model, expl_model, dataloader, device, args):
     expl_model.eval()
     correct = 0
+    vis = False
     for data in dataloader:  # Iterate in batches over the training/test dataset.
         x, edge_index, y_target = data.x.to(device), data.edge_index.to(device), data.y.to(device)
+        
         with torch.no_grad():
             node_emb = clf_model.embedding(x, edge_index) # num_nodes x h_dim
             edge_emb = create_edge_embed(node_emb, edge_index) # E x 2*h_dim
             sampling_weights = expl_model(edge_emb)
             expl_mask = sample_graph(sampling_weights, bias=0.0, training=False).squeeze()
+            if not vis:
+                visualize(data, expl_mask)
+                vis = True
             # Using the masked graph's edge weights
             masked_pred = clf_model(x, edge_index, edge_weights = expl_mask, batch=data.batch)   # Graph-level prediction
             y_pred = masked_pred.argmax(dim=1)
@@ -133,8 +260,14 @@ def train(clf_model, factual_explainer, optimizer_f, train_loader, val_loader, t
         t = temp_schedule(epoch)
         total_loss_f = 0
 
+        
+#         for batch in train_loader:
+#             x, edge_index, y_target = batch.x.to(device), batch.edge_index.to(device), batch.y.to(device)
+
+
         for data in train_loader:
             x, edge_index, y_target = data.x.to(device), data.edge_index.to(device), data.y.to(device)
+
             with torch.no_grad():
                 node_emb = clf_model.embedding(x, edge_index) # num_nodes x h_dim
             
@@ -143,6 +276,7 @@ def train(clf_model, factual_explainer, optimizer_f, train_loader, val_loader, t
             sampling_weights = factual_explainer(edge_emb)
             
             expl_mask = sample_graph(sampling_weights, t, bias=0.0).squeeze()
+ 
 
             #print(expl_mask.sum(), edge_index[0].shape)
             masked_pred = clf_model(x, edge_index, expl_mask, data.batch)  # Graph-level prediction
@@ -192,6 +326,7 @@ def run(args):
     clf_model = GCN(params['x_dim'], params['num_classes']).to(device)              # load best model
     
     # Load the saved state dictionary
+
     #checkpoint = torch.load('clf.pth')
     checkpoint = torch.load('clf2.pth')
 
