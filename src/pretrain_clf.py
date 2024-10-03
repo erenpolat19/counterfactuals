@@ -36,7 +36,7 @@ def test(loader, model, device):
 
 if __name__ == '__main__':
     device = 'cpu'
-    dataset_name = 'BA-2motif'
+    dataset_name = 'BA-2motif-new'
     data = preprocess_ba_2motifs(dataset_name, padded=False)
     train_loader, val_loader, test_loader = get_dataloaders(data, batch_size=64, val_split=0.1, test_split=0.1)
 
