@@ -11,6 +11,7 @@ from models import *
 import gcn
 from data_preprocessing import *
 from sklearn.metrics import roc_auc_score
+import os 
 
 def create_edge_embed(node_embeddings, edge_index):
     h_i = node_embeddings[edge_index[0]]  
@@ -91,11 +92,12 @@ def eval_acc(clf_model, expl_model, dataloader, device, args):
             masked_pred = clf_model(x, edge_index, edge_weights = expl_mask, batch=data.batch)   # Graph-level prediction
             y_pred = masked_pred.argmax(dim=1)
             correct += int((y_pred == y_target).sum())
+
     print('mask:', expl_mask.sum(), 'graph:', edge_index[0].shape)
     
     return correct / len(dataloader.dataset)
 
-def explain(clf_model, expl_model, inputs, device='cpu', bias = 0.0):
+def explain_inference(clf_model, expl_model, inputs, device='cpu', bias = 0.0):
     with torch.no_grad():
         x, edge_index, y_target = inputs
         node_emb = clf_model.embedding(x, edge_index) # num_nodes x h_dim
@@ -105,23 +107,24 @@ def explain(clf_model, expl_model, inputs, device='cpu', bias = 0.0):
     
     return expl_mask
 
-def eval_explain(clf_model, expl_model, dataloader, device):
+def eval_explain(clf_model, expl_model, dataloader, device='cpu'):
     expl_model.eval()
     predictions = []
     ground_explanations = []
     for data in dataloader:  # Iterate in batches over the training/test dataset.
-        inputs = data.x.to(device), data.edge_index.to(device), data.y.to(device)
-        x, edge_index, y_target = inputs
-        edge_label = data.edge_label.to(device)
-        expl_mask = explain(clf_model, expl_model, inputs)
+        with torch.no_grad():
+            inputs = data.x.to(device), data.edge_index.to(device), data.y.to(device)
+            x, edge_index, y_target = inputs
+            edge_label = data.edge_label.to(device)
+            expl_mask = explain_inference(clf_model, expl_model, inputs)
 
-        assert expl_mask.shape == edge_label.shape
+            assert expl_mask.shape == edge_label.shape
 
-        for idx in expl_mask.shape[0]:
-            predictions.append(expl_mask[idx].item())
-            ground_explanations.append(edge_label[idx].item())
+            for idx in range(expl_mask.shape[0]):
+                predictions.append(expl_mask[idx].item())
+                ground_explanations.append(edge_label[idx].item())
 
-    return roc_auc_score(ground_truth, predictions)
+    return roc_auc_score(ground_explanations, predictions)
 
 def train(clf_model, factual_explainer, optimizer_f, train_loader, val_loader, test_loader, device, args, temp=(5.0, 2.0)):
     temp_schedule = lambda e: temp[0] * ((temp[1] / temp[0]) ** (e / args.epochs))
@@ -143,14 +146,13 @@ def train(clf_model, factual_explainer, optimizer_f, train_loader, val_loader, t
 
             #print(expl_mask.sum(), edge_index[0].shape)
             masked_pred = clf_model(x, edge_index, expl_mask, data.batch)  # Graph-level prediction
-            print(expl_mask.shape)
 
             optimizer_f.zero_grad()
   
             # Loss for factual explainer
             # loss_f = KL div + clf loss
             reg_coefs = args.reg_coefs
-            reg_coefs = (1e-3, reg_coefs[1])
+            reg_coefs = (1e-3, reg_coefs[1]) # tuned
             loss = loss_f(masked_pred, y_target, expl_mask, reg_coefs)
 
             loss.backward()
@@ -165,6 +167,9 @@ def train(clf_model, factual_explainer, optimizer_f, train_loader, val_loader, t
     test_acc = eval_acc(clf_model, factual_explainer, test_loader, device, args)
     print(f"Final Test_acc: {test_acc}")
 
+    roc_auc = eval_explain(clf_model, factual_explainer, test_loader, device)
+    print('Final test ROC AUC:', roc_auc)
+
 def run(args):
     dataset_name = args.dataset
     device = "cpu"
@@ -172,6 +177,7 @@ def run(args):
     load data for train, val, test
     """
     data = preprocess_ba_2motifs(dataset_name, padded=False)
+    #data = torch.load('../dataset/ba2motif-generated.pt')
     train_loader, val_loader, test_loader = get_dataloaders(data, batch_size=64, val_split=0.1, test_split=0.1)
 
     """
