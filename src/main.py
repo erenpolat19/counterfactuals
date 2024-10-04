@@ -16,118 +16,100 @@ import matplotlib.pyplot as plt
 import networkx as nx
 import matplotlib.pyplot as plt
 
-def visualize(batch, expl_mask):
-    # Extract node features and edge index from the batch
-    x = batch.x
-    edge_index = batch.edge_index
+def extract_individual_graphs(batch, expl_mask):
+    # Get the number of graphs in the batch
+    num_graphs = batch.batch.max().item() + 1
 
-    print(f"Initial edge_index shape: {edge_index.shape}")  # Shape [2, N_edges]
-    print(f"Initial expl_mask shape: {expl_mask.shape}")    # Shape [N_edges]
-
-    G = nx.Graph()
-
-    # Apply the batch mask to select nodes from the first graph (batch == 1)
-    mask = batch.batch == 1  # Assuming batch.batch tells which graph each node belongs to
-    node_indices = mask.nonzero(as_tuple=False).view(-1)
-    node_features = x[node_indices]
+    graphs = []
+    expl_masks_split = [] 
     
-    # Apply the node mask to filter the edges in edge_index
-    edge_mask = mask[edge_index[0]]  # Select edges where the source node is part of the mask
-    edge_index_filtered = edge_index[:, edge_mask]  # Filter the edge index
+    # Iterate over each graph in the batch
+    for graph_idx in range(num_graphs):
+        # Find nodes that belong to the current graph
+        node_mask = batch.batch == graph_idx
+        
+        # Get node indices for this graph
+        node_indices = node_mask.nonzero(as_tuple=False).view(-1)
+        
+        # Extract node features for this graph
+        node_features = batch.x[node_indices]
+        
+        # Filter edges for the current graph
+        edge_mask = node_mask[batch.edge_index[0]]  # Only keep edges where the source node belongs to the current graph
+        edge_index = batch.edge_index[:, edge_mask]
+        
+        # Remap the node indices for the edge_index (so indices are zero-based for each graph)
+        edge_index_remapped = edge_index.clone()
+        node_id_map = {old_idx.item(): new_idx for new_idx, old_idx in enumerate(node_indices)}
+        
+        # Apply remapping safely with default if the node is missing
+        edge_index_remapped = edge_index_remapped.apply_(lambda idx: node_id_map.get(idx, -1))
 
-    # Also filter the explanation mask to keep only relevant edges
-    expl_mask_filtered = expl_mask[edge_mask]  # Filter the explanation mask
-    
-    print(f"Filtered edge_index shape: {edge_index_filtered.shape}")  # Should be [2, M_edges]
-    print(f"Filtered expl_mask shape: {expl_mask_filtered.shape}")    # Should be [M_edges]
-    
-    # Select top K edges based on the filtered explanation mask
-    k = 10
-    top_k_values, top_k_indices = torch.topk(expl_mask_filtered, k)
-    
-    for i in range(k):
-        u = edge_index_filtered[0][top_k_indices[i]]
-        v = edge_index_filtered[1][top_k_indices[i]]
-        G.add_edge(u.item(), v.item())
+        # print(f"Graph {graph_idx}: node_indices = {node_indices.tolist()}")
+        # print(f"Graph {graph_idx}: edge_index (before remapping) = {edge_index}")
+        # print(f"Graph {graph_idx}: edge_index_remapped (after remapping) = {edge_index_remapped}")
 
-    # Identify and visualize the nodes
-    print("Red node:", node_indices.tolist()[0])
-    node_to_identify = None  # Example: node to highlight
-    
-    for i, node_idx in enumerate(node_indices):
-        feature_tuple = tuple(node_features[i].tolist())
-        G.add_node(node_idx.item(), feature=feature_tuple)
+        # Remove edges with unmapped nodes (which were not part of the node_id_map)
+        valid_edges_mask = (edge_index_remapped[0] != -1) & (edge_index_remapped[1] != -1)
+        edge_index_remapped = edge_index_remapped[:, valid_edges_mask]
 
-    node_colors = ['red' if node == node_to_identify else 'blue' for node in G.nodes()]
-    nx.draw(G, with_labels=False, node_size=20, node_color=node_colors)
-    plt.show()
+        # Filter expl_mask for the current graph's edges
+        expl_mask_split = expl_mask[edge_mask][valid_edges_mask]
+        expl_masks_split.append(expl_mask_split)
 
+        # Create a dictionary for the current graph
+        graph_data = {
+            'nodes': node_features,
+            'edges': edge_index_remapped
+        }
+        
+        graphs.append(graph_data)
 
-# make batch size 1 then just do it once on all the test graphs
-def visualize_old(batch, expl_mask):
-    # print(batch)
-    x = batch.x
-    edge_index = batch.edge_index
+    return graphs, expl_masks_split
 
-    # print(edge_index.shape)
-    G = nx.Graph()
-    # get the first batch
-    mask = batch.batch == 1
+def visualize(graphs, expl_masks_split, top_k):
+    for i, graph_data in enumerate(graphs):
+        # Create a NetworkX graph
+        G = nx.Graph()
 
-    edge_mask = mask[edge_index[0]]  # This gives the mask for the edges, resulting in 50 edges being selected
+        # Add nodes
+        num_nodes = graph_data['nodes'].shape[0]
+        G.add_nodes_from(range(num_nodes))
 
-    # Step 2: Apply the mask to both edge_index and expl_mask
-    edge_index_filtered = edge_index[:, edge_mask]  # Shape will be [2, 50]
-    expl_mask_filtered = expl_mask[edge_mask]  # This will give the mask corresponding to the selected 50 edges
+        # Add edges
+        edges = graph_data['edges'].t().tolist()
+        G.add_edges_from(edges)
 
-    # Step 3: Now you can visualize with the filtered edge index and explanation mask
-    print("Filtered edge index shape:", edge_index_filtered.shape)  # Should be [2, 50]
-    print("Filtered expl_mask shape:", expl_mask_filtered.shape)
+        # Set up the plot
+        plt.figure(figsize=(6, 6))
+        pos = nx.spring_layout(G) 
+        
+        # Draw nodes
+        nx.draw_networkx_nodes(G, pos, node_size=20, node_color="lightblue", alpha=0.9)
 
+        # Draw edges
+        edge_colors = 'black'
+        expl_mask = expl_masks_split[i]  # Use the explanation mask corresponding to this graph
+        sorted_indices = expl_mask.argsort(descending=True)
+        top_k_indices = sorted_indices[:top_k]  # Get indices of top k edges
+        top_k_edges = [edges[idx] for idx in top_k_indices]
+        top_k_mask = expl_mask[top_k_indices]  # Corresponding importance values
 
+        non_top_k_indices = sorted_indices[top_k:]
+        non_top_k_edges = [edges[idx] for idx in non_top_k_indices]
 
-    # node_indices = mask.nonzero(as_tuple=False).view(-1)
-    # node_features = x[node_indices]
-    # edge_index = edge_index_full[:, mask[edge_index_full[0]]]
+        # Add the top k edges to the graph
+        G.add_edges_from(top_k_edges)
+        edge_colors = plt.cm.Reds(top_k_mask) 
+        nx.draw_networkx_edges(G, pos, edgelist=non_top_k_edges, edge_color='black')
+        nx.draw_networkx_edges(G, pos, edgelist=top_k_edges, edge_color=edge_colors, edge_cmap=plt.cm.Reds)
+        
+        # Title
+        plt.title(f'Graph {i+1}', fontsize=16)
+        plt.axis('off')  
 
-    # print("Edge index shape:", edge_index.shape)  # Should be [2, 3200] or similar
-    # print("Mask shape (applied to edge_index[0]):", mask[edge_index[0]].shape)  # Should match number of edges
-    # print("Expl mask shape:", expl_mask.shape)  # Should be [3200]
-
-
-    # edge_mask = mask[edge_index[0]]  
-    # edge_mask = expl_mask[edge_mask] 
-
-    # print(node_indices.shape)
-    # # print(edge_index)
-    # print(edge_index.shape)
-    # print(expl_mask.shape)
-    # print(mask.shape)
-
-
-    #  expl_mask = expl_mask[mask[edge_index_full[0]]]
-
-    k = 50
-    top_k_values, top_k_indices = torch.topk(expl_mask, k)
-    print(top_k_indices)
-    for i in range(k):
-        u = edge_index[0][top_k_indices[i]]
-        v = edge_index[1][top_k_indices[i]]
-        G.add_edge(u, v)
-
-    print("Red node:", node_indices.tolist()[0])
-
-    node_to_identify = None #node_indices.tolist()[0]
-
-
-    for i, node_idx in enumerate(node_indices):
-        feature_tuple = tuple(node_features[i].tolist())  
-        G.add_node(node_idx.item(), feature=feature_tuple)
-
-
-    node_colors = ['red' if node == node_to_identify else 'blue' for node in G.nodes()]
-    nx.draw(G, with_labels=False, node_size=20, node_color=node_colors)
-    plt.show()
+        # Show the plot
+        plt.show()
         
 
 def create_edge_embed(node_embeddings, edge_index):
@@ -208,7 +190,8 @@ def eval_acc(clf_model, expl_model, dataloader, device, args):
             sampling_weights = expl_model(edge_emb)
             expl_mask = sample_graph(sampling_weights, bias=0.0, training=False).squeeze()
             if not vis:
-                visualize(data, expl_mask)
+                graphs, expl_masks_split = extract_individual_graphs(data, expl_mask)
+                visualize(graphs, expl_masks_split, top_k=10)
                 vis = True
             # Using the masked graph's edge weights
             masked_pred = clf_model(x, edge_index, edge_weights = expl_mask, batch=data.batch)   # Graph-level prediction
