@@ -10,6 +10,7 @@ from models import *
 #from pretrain_clf import * 
 import gcn
 from data_preprocessing import *
+
 import networkx as nx
 import matplotlib.pyplot as plt
 
@@ -112,6 +113,9 @@ def visualize(graphs, expl_masks_split, top_k):
         plt.show()
         
 
+from sklearn.metrics import roc_auc_score
+
+
 def create_edge_embed(node_embeddings, edge_index):
     h_i = node_embeddings[edge_index[0]]  
     h_j = node_embeddings[edge_index[1]]  
@@ -200,7 +204,34 @@ def eval_acc(clf_model, expl_model, dataloader, device, args):
     print('mask:', expl_mask.sum(), 'graph:', edge_index[0].shape)
     
     return correct / len(dataloader.dataset)
+
+def explain(clf_model, expl_model, inputs, device='cpu', bias = 0.0):
+    with torch.no_grad():
+        x, edge_index, y_target = inputs
+        node_emb = clf_model.embedding(x, edge_index) # num_nodes x h_dim
+        edge_emb = create_edge_embed(node_emb, edge_index) # E x 2*h_dim
+        sampling_weights = expl_model(edge_emb)
+        expl_mask = sample_graph(sampling_weights, bias=bias, training=False).squeeze()
     
+    return expl_mask
+
+def eval_explain(clf_model, expl_model, dataloader, device):
+    expl_model.eval()
+    predictions = []
+    ground_explanations = []
+    for data in dataloader:  # Iterate in batches over the training/test dataset.
+        inputs = data.x.to(device), data.edge_index.to(device), data.y.to(device)
+        x, edge_index, y_target = inputs
+        edge_label = data.edge_label.to(device)
+        expl_mask = explain(clf_model, expl_model, inputs)
+
+        assert expl_mask.shape == edge_label.shape
+
+        for idx in expl_mask.shape[0]:
+            predictions.append(expl_mask[idx].item())
+            ground_explanations.append(edge_label[idx].item())
+
+    return roc_auc_score(ground_truth, predictions)
 
 def train(clf_model, factual_explainer, optimizer_f, train_loader, val_loader, test_loader, device, args, temp=(5.0, 2.0)):
     temp_schedule = lambda e: temp[0] * ((temp[1] / temp[0]) ** (e / args.epochs))
@@ -208,9 +239,15 @@ def train(clf_model, factual_explainer, optimizer_f, train_loader, val_loader, t
         factual_explainer.train()
         t = temp_schedule(epoch)
         total_loss_f = 0
+
         
-        for batch in train_loader:
-            x, edge_index, y_target = batch.x.to(device), batch.edge_index.to(device), batch.y.to(device)
+#         for batch in train_loader:
+#             x, edge_index, y_target = batch.x.to(device), batch.edge_index.to(device), batch.y.to(device)
+
+
+        for data in train_loader:
+            x, edge_index, y_target = data.x.to(device), data.edge_index.to(device), data.y.to(device)
+
             with torch.no_grad():
                 node_emb = clf_model.embedding(x, edge_index) # num_nodes x h_dim
             
@@ -222,7 +259,8 @@ def train(clf_model, factual_explainer, optimizer_f, train_loader, val_loader, t
  
 
             #print(expl_mask.sum(), edge_index[0].shape)
-            masked_pred = clf_model(x, edge_index, expl_mask, batch.batch)  # Graph-level prediction
+            masked_pred = clf_model(x, edge_index, expl_mask, data.batch)  # Graph-level prediction
+            print(expl_mask.shape)
 
             optimizer_f.zero_grad()
   
@@ -265,6 +303,8 @@ def run(args):
     clf_model = GCN(params['x_dim'], params['num_classes']).to(device)              # load best model
     
     # Load the saved state dictionary
+
+    #checkpoint = torch.load('clf.pth')
     checkpoint = torch.load('clf2.pth')
 
     # Load the weights into the model
