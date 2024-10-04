@@ -1,157 +1,5 @@
-import argparse
-import sys
-import numpy as np
-import models
-import torch
-import torch.nn.functional as F
-import data_preprocessing
-from torch.optim import Adam
-from models import *
-#from pretrain_clf import * 
-import gcn
-from data_preprocessing import *
-
-import networkx as nx
-import matplotlib.pyplot as plt
-
-import networkx as nx
-import matplotlib.pyplot as plt
-
-def visualize(batch, expl_mask):
-    # Extract node features and edge index from the batch
-    x = batch.x
-    edge_index = batch.edge_index
-
-    print(f"Initial edge_index shape: {edge_index.shape}")  # Shape [2, N_edges]
-    print(f"Initial expl_mask shape: {expl_mask.shape}")    # Shape [N_edges]
-
-    G = nx.Graph()
-
-    # Apply the batch mask to select nodes from the first graph (batch == 1)
-    mask = batch.batch == 1  # Assuming batch.batch tells which graph each node belongs to
-    node_indices = mask.nonzero(as_tuple=False).view(-1)
-    node_features = x[node_indices]
-    
-    # Apply the node mask to filter the edges in edge_index
-    edge_mask = mask[edge_index[0]]  # Select edges where the source node is part of the mask
-    edge_index_filtered = edge_index[:, edge_mask]  # Filter the edge index
-
-    # Also filter the explanation mask to keep only relevant edges
-    expl_mask_filtered = expl_mask[edge_mask]  # Filter the explanation mask
-    
-    print(f"Filtered edge_index shape: {edge_index_filtered.shape}")  # Should be [2, M_edges]
-    print(f"Filtered expl_mask shape: {expl_mask_filtered.shape}")    # Should be [M_edges]
-    
-    # Select top K edges based on the filtered explanation mask
-    k = 10
-    top_k_values, top_k_indices = torch.topk(expl_mask_filtered, k)
-    
-    for i in range(k):
-        u = edge_index_filtered[0][top_k_indices[i]]
-        v = edge_index_filtered[1][top_k_indices[i]]
-        G.add_edge(u.item(), v.item())
-
-    # Identify and visualize the nodes
-    print("Red node:", node_indices.tolist()[0])
-    node_to_identify = None  # Example: node to highlight
-    
-    for i, node_idx in enumerate(node_indices):
-        feature_tuple = tuple(node_features[i].tolist())
-        G.add_node(node_idx.item(), feature=feature_tuple)
-
-    node_colors = ['red' if node == node_to_identify else 'blue' for node in G.nodes()]
-    nx.draw(G, with_labels=False, node_size=20, node_color=node_colors)
-    plt.show()
-
-
-# make batch size 1 then just do it once on all the test graphs
-def visualize_old(batch, expl_mask):
-    # print(batch)
-    x = batch.x
-    edge_index = batch.edge_index
-
-    # print(edge_index.shape)
-    G = nx.Graph()
-    # get the first batch
-    mask = batch.batch == 1
-
-    edge_mask = mask[edge_index[0]]  # This gives the mask for the edges, resulting in 50 edges being selected
-
-    # Step 2: Apply the mask to both edge_index and expl_mask
-    edge_index_filtered = edge_index[:, edge_mask]  # Shape will be [2, 50]
-    expl_mask_filtered = expl_mask[edge_mask]  # This will give the mask corresponding to the selected 50 edges
-
-    # Step 3: Now you can visualize with the filtered edge index and explanation mask
-    print("Filtered edge index shape:", edge_index_filtered.shape)  # Should be [2, 50]
-    print("Filtered expl_mask shape:", expl_mask_filtered.shape)
-
-
-
-    # node_indices = mask.nonzero(as_tuple=False).view(-1)
-    # node_features = x[node_indices]
-    # edge_index = edge_index_full[:, mask[edge_index_full[0]]]
-
-    # print("Edge index shape:", edge_index.shape)  # Should be [2, 3200] or similar
-    # print("Mask shape (applied to edge_index[0]):", mask[edge_index[0]].shape)  # Should match number of edges
-    # print("Expl mask shape:", expl_mask.shape)  # Should be [3200]
-
-
-    # edge_mask = mask[edge_index[0]]  
-    # edge_mask = expl_mask[edge_mask] 
-
-    # print(node_indices.shape)
-    # # print(edge_index)
-    # print(edge_index.shape)
-    # print(expl_mask.shape)
-    # print(mask.shape)
-
-
-    #  expl_mask = expl_mask[mask[edge_index_full[0]]]
-
-    k = 50
-    top_k_values, top_k_indices = torch.topk(expl_mask, k)
-    print(top_k_indices)
-    for i in range(k):
-        u = edge_index[0][top_k_indices[i]]
-        v = edge_index[1][top_k_indices[i]]
-        G.add_edge(u, v)
-
-    print("Red node:", node_indices.tolist()[0])
-
-    node_to_identify = None #node_indices.tolist()[0]
-
-
-    for i, node_idx in enumerate(node_indices):
-        feature_tuple = tuple(node_features[i].tolist())  
-        G.add_node(node_idx.item(), feature=feature_tuple)
-
-
-    node_colors = ['red' if node == node_to_identify else 'blue' for node in G.nodes()]
-    nx.draw(G, with_labels=False, node_size=20, node_color=node_colors)
-    plt.show()
-        
-
-from sklearn.metrics import roc_auc_score
-import os 
-
-
-def create_edge_embed(node_embeddings, edge_index):
-    h_i = node_embeddings[edge_index[0]]  
-    h_j = node_embeddings[edge_index[1]]  
-
-    return torch.cat([h_i, h_j], dim=-1)
-
-# gumbel-softmax reparam trick 
-def sample_graph(sampling_weights, temperature=1.0, bias=0.0, device='cpu', training=True):
-    if training:
-        bias = bias + 0.0001  #apparently if bias is 0 there can be problems
-        eps = (bias - (1-bias)) * torch.rand(sampling_weights.size(),device=device) + (1-bias)
-        gate_inputs = torch.log(eps) - torch.log(1 - eps)
-        gate_inputs = (gate_inputs + sampling_weights) / temperature
-        graph = torch.sigmoid(gate_inputs)
-    else:
-        graph = torch.sigmoid(sampling_weights)
-    return graph
+from visualize import *
+from utils import * 
 
 sys.path.append('../')
 
@@ -199,20 +47,18 @@ def loss_f(pred, target, mask, reg_coefs):
     
     return cce_loss + size_loss + mask_ent_loss
 
-
-def eval_acc(clf_model, expl_model, dataloader, device, args):
+def eval_acc(clf_model, expl_model, dataloader, device, args, vis=False):
     expl_model.eval()
     correct = 0
-    vis = False
     for data in dataloader:  # Iterate in batches over the training/test dataset.
         x, edge_index, y_target = data.x.to(device), data.edge_index.to(device), data.y.to(device)
         
         with torch.no_grad():
-            node_emb = clf_model.embedding(x, edge_index) # num_nodes x h_dim
-            edge_emb = create_edge_embed(node_emb, edge_index) # E x 2*h_dim
-            sampling_weights = expl_model(edge_emb)
-            expl_mask = sample_graph(sampling_weights, bias=0.0, training=False).squeeze()
-            if not vis:
+            inputs = data.x.to(device), data.edge_index.to(device), data.y.to(device)
+            x, edge_index, y_target = inputs
+            edge_label = data.edge_label.to(device)
+            expl_mask = explain_inference(clf_model, expl_model, inputs)
+            if vis:
                 visualize(data, expl_mask)
                 vis = True
             # Using the masked graph's edge weights
@@ -250,7 +96,7 @@ def eval_explain(clf_model, expl_model, dataloader, device='cpu'):
             for idx in range(expl_mask.shape[0]):
                 predictions.append(expl_mask[idx].item())
                 ground_explanations.append(edge_label[idx].item())
-
+            
     return roc_auc_score(ground_explanations, predictions)
 
 def train(clf_model, factual_explainer, optimizer_f, train_loader, val_loader, test_loader, device, args, temp=(5.0, 2.0)):
@@ -298,11 +144,11 @@ def train(clf_model, factual_explainer, optimizer_f, train_loader, val_loader, t
         train_acc = eval_acc(clf_model, factual_explainer, val_loader, device, args)
         print(f"Epoch {epoch + 1}/{args.epochs}, Factual Loss: {loss}, Val_acc: {val_acc},  Train_acc: {train_acc}")
 
-    test_acc = eval_acc(clf_model, factual_explainer, test_loader, device, args)
+    test_acc = eval_acc(clf_model, factual_explainer, test_loader, device, args, vis=True)
     print(f"Final Test_acc: {test_acc}")
 
-    roc_auc = eval_explain(clf_model, factual_explainer, test_loader, device)
-    print('Final test ROC AUC:', roc_auc)
+    #roc_auc = eval_explain(clf_model, factual_explainer, test_loader, device)
+    #print('Final test ROC AUC:', roc_auc)
 
 def run(args):
     dataset_name = args.dataset
@@ -311,7 +157,9 @@ def run(args):
     load data for train, val, test
     """
     data = preprocess_ba_2motifs(dataset_name, padded=False)
-    #data = torch.load('../dataset/ba2motif-generated.pt')
+    # with open('../dataset/ba2-generated.pkl', 'rb') as f:
+    #     data = pkl.load(f)
+        
     train_loader, val_loader, test_loader = get_dataloaders(data, batch_size=64, val_split=0.1, test_split=0.1)
 
     """
@@ -327,8 +175,9 @@ def run(args):
     
     # Load the saved state dictionary
 
-    #checkpoint = torch.load('clf.pth')
-    checkpoint = torch.load('clf2.pth')
+    checkpoint = torch.load('clf.pth')
+    #checkpoint = torch.load('clf-gen.pth')
+    #checkpoint = torch.load('clf-generated.pth')
 
     # Load the weights into the model
     clf_model.load_state_dict(checkpoint)
